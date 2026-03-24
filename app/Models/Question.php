@@ -18,6 +18,7 @@ class Question extends Model
         'correct_answer',
         'explanation_video_url', // 👈 Add this
         'explanation_text'       // 👈 Add this
+    
     ];
 
     public function lesson()

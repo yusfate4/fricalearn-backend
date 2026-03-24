@@ -50,11 +50,11 @@ class User extends Authenticatable
         return $this->hasMany(CourseEnrollment::class, 'student_id');
     }
 
-    public function progressRecords()
-    {
-        return $this->hasMany(ProgressRecord::class, 'student_id');
-    }
-
+   public function progressRecords()
+{
+    // 🚨 Add 'user_id' as the second parameter to fix the "student_id not found" error
+    return $this->hasMany(ProgressRecord::class, 'user_id');
+}
     public function children()
     {
         return $this->belongsToMany(User::class, 'parent_student_links', 'parent_id', 'student_id')

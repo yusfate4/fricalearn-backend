@@ -19,22 +19,20 @@ class GamificationController extends Controller
         $this->gamificationService = $gs;
     }
 
-    public function getLeaderboard(Request $request) {
-        // We fetch users who are NOT admins, or filter by role if you prefer
-        $leaderboard = \App\Models\User::where('is_admin', 0)
-            ->with('studentProfile')
-            ->get()
-            ->filter(function($user) {
-                // Only show users who actually have a profile created
-                return $user->studentProfile !== null;
-            })
-            ->sortByDesc(function($user) {
-                return $user->studentProfile->total_points ?? 0;
-            })
-            ->values(); 
+   public function getLeaderboard()
+{
+    $startOfWeek = \Carbon\Carbon::now()->startOfWeek();
 
-        return response()->json($leaderboard);
-    }
+    // Get the top 10 students for the current week
+    $entries = \App\Models\LeaderboardEntry::where('period', 'weekly')
+        ->where('period_start', $startOfWeek->toDateString())
+        ->with('student.studentProfile')
+        ->orderBy('points', 'desc')
+        ->limit(10)
+        ->get();
+
+    return response()->json($entries);
+}
 
     public function getBadges() {
         return response()->json(Badge::all());

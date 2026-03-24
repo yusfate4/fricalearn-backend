@@ -15,17 +15,21 @@ class QuestionController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        // 2. Validate the quiz data
+        // 2. Validate the quiz data (Now including the fail-safe fields!)
         $validated = $request->validate([
-            'lesson_id'      => 'required|exists:lessons,id',
-            'question_text'  => 'required|string',
-            'option_a'       => 'required|string',
-            'option_b'       => 'required|string',
-            'option_c'       => 'required|string',
-            'correct_answer' => 'required|in:a,b,c',
+            'lesson_id'             => 'required|exists:lessons,id',
+            'question_text'         => 'required|string',
+            'option_a'              => 'required|string',
+            'option_b'              => 'required|string',
+            'option_c'              => 'required|string',
+            'correct_answer'        => 'required|in:a,b,c',
+            
+            // 🚨 Tell Laravel to accept and save these new fields
+            'explanation_video_url' => 'nullable|string',
+            'explanation_text'      => 'nullable|string',
         ]);
 
-        // 3. Save to the 'questions' table we created
+        // 3. Save to the 'questions' table
         $question = Question::create($validated);
 
         return response()->json([

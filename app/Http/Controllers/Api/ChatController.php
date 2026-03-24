@@ -108,12 +108,49 @@ class ChatController extends Controller
     /**
      * Mark all messages in a conversation as read (Admin only)
      */
-    public function markAsRead($id)
-    {
-        Message::where('conversation_id', $id)
-            ->where('sender_id', '!=', auth()->id()) // Don't mark your own messages
-            ->update(['is_read' => true]);
+/**
+ * 👁️ Mark all messages in a conversation as read by the Admin.
+ */
+public function markAsRead($id)
+{
+    // Update all messages sent by the student to 'is_read = true'
+    \App\Models\Message::where('conversation_id', $id)
+        ->where('sender_id', '!=', auth()->id())
+        ->update(['is_read' => true]);
 
-        return response()->json(['message' => 'Conversation marked as read']);
-    }
+    return response()->json(['message' => 'Conversation marked as read']);
+}
+
+    /**
+ * 👨‍🏫 Fetch all conversations for the Admin dashboard.
+ * This allows Yusuf to see every student who has started a chat.
+ */
+public function getAdminConversations()
+{
+    // We pull conversations with the student details and the last message sent
+    $conversations = \App\Models\Conversation::with(['student', 'latestMessage'])
+        ->orderBy('updated_at', 'desc')
+        ->get();
+
+    return response()->json($conversations);
+}
+
+/**
+ * 💬 Fetch messages for a specific conversation.
+ * This is used by both the student and the admin.
+ */
+public function getMessages($id)
+{
+    $messages = \App\Models\Message::where('conversation_id', $id)
+        ->with('sender')
+        ->orderBy('created_at', 'asc')
+        ->get();
+
+    // Mark messages as read if the recipient is opening them
+    \App\Models\Message::where('conversation_id', $id)
+        ->where('sender_id', '!=', auth()->id())
+        ->update(['is_read' => true]);
+
+    return response()->json($messages);
+}
 }

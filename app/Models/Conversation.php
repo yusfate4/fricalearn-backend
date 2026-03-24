@@ -24,4 +24,8 @@ class Conversation extends Model
     {
         return $this->belongsTo(User::class, 'tutor_id');
     }
+    public function latestMessage()
+{
+    return $this->hasOne(Message::class)->latestOfMany();
+}
 }

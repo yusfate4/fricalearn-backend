@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\Storage;
 class LessonController extends Controller
 {
     /**
-     * Admin: List all lessons for management (LMS-09)
+     * Admin: List all lessons for management
      */
     public function index()
     {
@@ -23,12 +23,11 @@ class LessonController extends Controller
     }
 
     /**
-     * Fetch a specific lesson, its questions, and attachments (LMS-07)
-     * Includes the new Video Explanation fields for the Quiz
+     * Fetch a specific lesson and its questions (LMS-07)
+     * Now includes practice_word for the Speak & Earn feature
      */
     public function show($id)
     {
-        // Eager load everything needed for the lesson and the "Tutor Fail-Safe" quiz
         $lesson = Lesson::with(['questions', 'attachments', 'contents'])->find($id);
 
         if (!$lesson) {
@@ -39,7 +38,7 @@ class LessonController extends Controller
     }
 
     /**
-     * Admin: Create a new lesson with basic details (LMS-02, LMS-10)
+     * Admin: Create a new lesson
      */
     public function store(Request $request)
     {
@@ -48,13 +47,15 @@ class LessonController extends Controller
         }
 
         $validated = $request->validate([
-            'course_id'   => 'required|exists:courses,id',
-            'title'       => 'required|string|max:255',
-            'content'     => 'required|string', 
-            'video_url'   => 'nullable|url',
-            'files.*'     => 'file|max:20480', 
+            'course_id'     => 'required|exists:courses,id',
+            'title'         => 'required|string|max:255',
+            'practice_word' => 'nullable|string|max:255', // 👈 Added for AI Pronunciation
+            'content'       => 'required|string', 
+            'video_url'     => 'nullable|url',
+            'files.*'       => 'file|max:20480', 
         ]);
 
+        // Default to a general module if none provided
         $moduleId = $request->module_id;
         if (!$moduleId) {
             $defaultModule = \App\Models\Module::firstOrCreate(
@@ -65,13 +66,14 @@ class LessonController extends Controller
         }
 
         $lesson = Lesson::create([
-            'course_id'    => $validated['course_id'],
-            'module_id'    => $moduleId,
-            'title'        => $validated['title'],
-            'content'      => $validated['content'], 
-            'video_url'    => $validated['video_url'],
-            'order_index'  => 0,
-            'is_published' => true,
+            'course_id'     => $validated['course_id'],
+            'module_id'     => $moduleId,
+            'title'         => $validated['title'],
+            'practice_word' => $validated['practice_word'], // 👈 Saved to DB
+            'content'       => $validated['content'], 
+            'video_url'     => $validated['video_url'],
+            'order_index'   => 0,
+            'is_published'  => true,
         ]);
 
         if ($request->hasFile('files')) {
@@ -90,7 +92,66 @@ class LessonController extends Controller
     }
 
     /**
-     * NEW: Dedicated File Upload Endpoint (Videos, PDFs, Audio)
+     * Mark a lesson as started
+     */
+    public function start(Request $request, $id)
+    {
+        $user = $request->user();
+
+        $progress = ProgressRecord::firstOrCreate(
+            ['user_id' => $user->id, 'lesson_id' => $id],
+            ['status' => 'in_progress', 'started_at' => now()]
+        );
+
+        return response()->json(['message' => 'Lesson started', 'progress' => $progress]);
+    }
+
+    /**
+     * Mark a lesson/quiz as completed and award points/coins (GAM-01)
+     */
+    public function complete(Request $request, $id)
+    {
+        $user = $request->user();
+        
+        $validated = $request->validate([
+            'score'  => 'required|numeric|min:0|max:100',
+            'points' => 'nullable|integer',
+        ]);
+
+        $profile = $user->studentProfile()->firstOrCreate(
+            ['user_id' => $user->id],
+            ['total_points' => 0, 'total_coins' => 0]
+        );
+
+        $pointsAwarded = $validated['points'] ?? 50;
+        $passed = $validated['score'] >= 70;
+
+        $profile->increment('total_points', $pointsAwarded);
+        
+        if ($passed) {
+            $profile->increment('total_coins', $pointsAwarded);
+        }
+
+        $progress = ProgressRecord::updateOrCreate(
+            ['user_id' => $user->id, 'lesson_id' => $id],
+            [
+                'status'       => 'completed', 
+                'score'        => $validated['score'],
+                'completed_at' => now()
+            ]
+        );
+
+        return response()->json([
+            'message'      => $passed ? 'O ku ise! (Well done!)' : 'Keep trying!',
+            'score'        => $progress->score,
+            'total_points' => $profile->total_points,
+            'total_coins'  => $profile->total_coins,
+            'passed'       => $passed
+        ]);
+    }
+
+    /**
+     * Admin: Dedicated File Upload Endpoint
      */
     public function uploadContent(Request $request, $id)
     {
@@ -109,18 +170,10 @@ class LessonController extends Controller
         $url = '';
         
         switch ($validated['content_type']) {
-            case 'video':
-                $url = $fileService->uploadVideo($validated['file']);
-                break;
-            case 'document':
-                $url = $fileService->uploadDocument($validated['file']);
-                break;
-            case 'audio':
-                $url = $fileService->uploadAudio($validated['file']);
-                break;
-            case 'image':
-                $url = $fileService->uploadImage($validated['file']);
-                break;
+            case 'video': $url = $fileService->uploadVideo($validated['file']); break;
+            case 'document': $url = $fileService->uploadDocument($validated['file']); break;
+            case 'audio': $url = $fileService->uploadAudio($validated['file']); break;
+            case 'image': $url = $fileService->uploadImage($validated['file']); break;
         }
 
         $content = LessonContent::create([
@@ -129,76 +182,55 @@ class LessonController extends Controller
             'file_url' => $url,
         ]);
 
-        return response()->json([
-            'message' => 'File uploaded successfully',
-            'url' => $url,
-            'data' => $content
-        ], 201);
+        return response()->json(['message' => 'File uploaded', 'url' => $url, 'data' => $content], 201);
     }
 
-    /**
-     * Mark a lesson as started (LMS-06)
-     */
-    public function start(Request $request, $id)
-    {
-        $lesson = Lesson::findOrFail($id);
-        $user = $request->user();
-
-        $progress = ProgressRecord::firstOrCreate(
-            ['user_id' => $user->id, 'lesson_id' => $lesson->id],
-            ['status' => 'in_progress', 'started_at' => now()]
-        );
-
-        return response()->json(['message' => 'Lesson started', 'progress' => $progress]);
+/**
+ * Admin: Update an existing lesson
+ */
+public function update(Request $request, $id)
+{
+    if (!$request->user()->is_admin) {
+        return response()->json(['message' => 'Admin only.'], 403);
     }
 
-    /**
-     * Mark a lesson/quiz as completed and award points/coins (GAM-01)
-     * Handles dynamic scoring from StudentQuizView
-     */
-    public function complete(Request $request, $id)
-    {
-        $user = $request->user();
-        
-        $validated = $request->validate([
-            'score'  => 'nullable|numeric|min:0|max:100',
-            'points' => 'nullable|integer',
-        ]);
+    $lesson = Lesson::findOrFail($id);
 
-        // Ensure the student profile exists to hold points and coins
-        $profile = $user->studentProfile;
-        if (!$profile) {
-            $profile = StudentProfile::create([
-                'user_id' => $user->id,
-                'total_points' => 0,
-                'total_coins' => 0
-            ]);
-        }
+    $validated = $request->validate([
+        'title'         => 'required|string|max:255',
+        'practice_word' => 'nullable|string|max:255',
+        'content'       => 'required|string',
+        'video_url'     => 'nullable|url',
+    ]);
 
-        // Award points based on quiz results or default to 50
-        $pointsAwarded = $validated['points'] ?? 50;
-        $profile->increment('total_points', $pointsAwarded);
-        
-        // Award FricaCoins if the student passed (score >= 70%)
-        if (($validated['score'] ?? 0) >= 70) {
-            $profile->increment('total_coins', $pointsAwarded);
-        }
+    $lesson->update($validated);
 
-        // Permanently record completion progress
-        ProgressRecord::updateOrCreate(
-            ['user_id' => $user->id, 'lesson_id' => $id],
-            [
-                'status' => 'completed', 
-                'score' => $validated['score'] ?? 100,
-                'completed_at' => now()
-            ]
-        );
+    return response()->json([
+        'message' => 'Lesson updated successfully!',
+        'lesson'  => $lesson
+    ]);
+}
 
-        return response()->json([
-            'message' => 'O ku ise! (Well done!)',
-            'total_points' => $profile->total_points,
-            'total_coins'  => $profile->total_coins,
-            'added_points' => $pointsAwarded
-        ]);
+/**
+ * Admin: Delete a lesson and its media
+ */
+public function destroy(Request $request, $id)
+{
+    if (!$request->user()->is_admin) {
+        return response()->json(['message' => 'Admin only.'], 403);
     }
+
+    $lesson = Lesson::with('contents')->findOrFail($id);
+
+    // 🧹 Clean up Physical Files from Storage
+    foreach ($lesson->contents as $content) {
+        // Assuming file_url is like '/storage/lesson_media/file.mp4'
+        $path = str_replace('/storage/', '', $content->file_url);
+        Storage::disk('public')->delete($path);
+    }
+
+    $lesson->delete();
+
+    return response()->json(['message' => 'Lesson and associated media deleted.']);
+}
 }
