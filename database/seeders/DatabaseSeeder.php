@@ -2,43 +2,52 @@
 
 namespace Database\Seeders;
 
-use App\Models\User;
-use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\Hash;
+use App\Models\User;
+use App\Models\StudentProfile;
 
 class DatabaseSeeder extends Seeder
 {
-    use WithoutModelEvents;
-
     /**
      * Seed the application's database.
      */
     public function run(): void
-{
-    // 1. Create Yusuf (Admin)
-    \App\Models\User::factory()->create([
-        'name' => 'Yusuf',
-        'email' => 'admin@fricalearn.com', // Change to your actual email
-        'password' => bcrypt('password'),
-        'is_admin' => 1,
-    ]);
+    {
+        // 1. Create the Founder / Admin (Yusuf)
+        User::updateOrCreate(
+            ['email' => 'admin@fricalearn.com'],
+            [
+                'name' => 'Yusuf',
+                'password' => Hash::make('12345678'), // Easy password for local testing
+                'is_admin' => true,
+            ]
+        );
 
-    // 2. Create Ayo (Student)
-    $student = \App\Models\User::create([
-        'name' => 'Ayo Test',
-        'email' => 'ayo@test.com',
-        'password' => bcrypt('password123'),
-        'is_admin' => 0,
-    ]);
+        // 2. Create the Test Student (Ayo)
+        $student = User::updateOrCreate(
+            ['email' => 'ayo@test.com'],
+            [
+                'name' => 'Ayo Learner',
+                'password' => Hash::make('password123'),
+                'is_admin' => false,
+            ]
+        );
 
-    // 3. Give Ayo a Profile
-    \App\Models\StudentProfile::create([
-        'user_id' => $student->id,
-        'language' => 'Yoruba',
-        'total_points' => 0,
-    ]);
+        // 3. Give Ayo a Gamification Profile
+        // This ensures the dashboard doesn't crash looking for his points/rank
+        StudentProfile::updateOrCreate(
+            ['user_id' => $student->id],
+            [
+                'language' => 'Yoruba',
+                'total_points' => 0,
+                'total_coins' => 0,
+            ]
+        );
 
-    // 4. Run the Badge Seeder
-    $this->call(BadgeSeeder::class);
-}
+        $this->command->info('✅ FricaLearn Users Seeded: Admin (Yusuf) & Student (Ayo) are ready!');
+
+        // For Rewards
+        $this->call([RewardSeeder::class]);
+    }
 }

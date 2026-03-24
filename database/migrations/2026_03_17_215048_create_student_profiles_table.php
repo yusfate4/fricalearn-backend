@@ -9,16 +9,22 @@ return new class extends Migration
     /**
      * Run the migrations.
      */
-    public function up(): void
+public function up(): void
     {
-   Schema::create('student_profiles', function (Blueprint $table) {
-    $table->id();
-    $table->foreignId('user_id')->constrained()->onDelete('cascade');
-    $table->string('language')->default('Yoruba'); // We'll use 'language'
-    $table->integer('total_points')->default(0);   // We'll use 'total_points'
-    $table->integer('current_level')->default(1);
-    $table->timestamps();
-});
+        Schema::create('student_profiles', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('user_id')->constrained()->onDelete('cascade');
+            $table->string('language')->default('Yoruba');
+            $table->integer('total_points')->default(0);
+            
+            // 👇 ADD THIS LINE FOR GAMIFICATION COINS
+            $table->integer('total_coins')->default(0); 
+            
+            // 👇 ADD THIS LINE FOR RANKS (If you don't have it already)
+            $table->string('current_level')->default('Omode'); 
+            
+            $table->timestamps();
+        });
     }
 
     /**

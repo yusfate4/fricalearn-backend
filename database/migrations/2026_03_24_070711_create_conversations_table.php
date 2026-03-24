@@ -9,14 +9,12 @@ return new class extends Migration
     /**
      * Run the migrations.
      */
-public function up(): void
+  public function up(): void
 {
-    Schema::create('reward_redemptions', function (Blueprint $table) {
+    Schema::create('conversations', function (Blueprint $table) {
         $table->id();
         $table->foreignId('student_id')->constrained('users')->onDelete('cascade');
-        $table->foreignId('reward_id')->constrained('rewards')->onDelete('cascade');
-        $table->integer('coins_spent');
-        $table->enum('status', ['pending', 'fulfilled', 'cancelled'])->default('pending');
+        $table->foreignId('tutor_id')->constrained('users')->onDelete('cascade');
         $table->timestamps();
     });
 }
@@ -26,6 +24,6 @@ public function up(): void
      */
     public function down(): void
     {
-        Schema::dropIfExists('reward_redemptions');
+        Schema::dropIfExists('conversations');
     }
 };

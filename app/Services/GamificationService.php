@@ -49,4 +49,20 @@ class GamificationService
             ['points' => $pointsThisWeek]
         );
     }
+
+    /**
+     * NEW: Safely deduct coins from a student's profile
+     */
+    public function spendCoins(int $studentId, int $coinsToSpend): bool
+    {
+        $profile = StudentProfile::where('user_id', $studentId)->first();
+        
+        // Check if profile exists and has enough coins
+        if ($profile && $profile->total_coins >= $coinsToSpend) {
+            $profile->decrement('total_coins', $coinsToSpend);
+            return true; // Purchase successful
+        }
+        
+        return false; // Insufficient funds
+    }
 }

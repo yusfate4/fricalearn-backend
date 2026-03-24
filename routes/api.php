@@ -3,7 +3,7 @@
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
-// Import all your controllers here
+// Import all controllers
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CourseController;
 use App\Http\Controllers\Api\LessonController;
@@ -21,8 +21,6 @@ use App\Http\Controllers\Api\ProgressController;
 */
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
-
-// Move this here TEMPORARILY to test the Course Page
 Route::get('/courses/{id}', [CourseController::class, 'show']);
 
 /*
@@ -39,19 +37,18 @@ Route::middleware('auth:sanctum')->group(function () {
     // Courses
     Route::prefix('courses')->group(function () {
         Route::get('/', [CourseController::class, 'index']);
-        // Route::get('/{id}', [CourseController::class, 'show']);
         Route::post('/', [CourseController::class, 'store']);
         Route::put('/{id}', [CourseController::class, 'update']);
         Route::post('/{id}/enroll', [CourseController::class, 'enroll']);
         Route::get('/my/enrollments', [CourseController::class, 'myEnrollments']);
-    }); // Fixed: Properly closed courses group
+    });
 
     // Lessons
     Route::prefix('lessons')->group(function () {
         Route::get('/{id}', [LessonController::class, 'show']);
         Route::post('/{id}/start', [LessonController::class, 'start']);
         Route::post('/{id}/complete', [LessonController::class, 'complete']);
-        
+        Route::post('/{id}/content', [LessonController::class, 'uploadContent']);
     });
     
     // Quizzes
@@ -70,11 +67,15 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/submissions/{id}/grade', [AssignmentController::class, 'grade']);
     });
 
-    // Gamification
+    // Gamification & Rewards (Student Side)
     Route::prefix('gamification')->group(function () {
         Route::get('/leaderboard', [GamificationController::class, 'getLeaderboard']);
         Route::get('/badges', [GamificationController::class, 'getBadges']);
     });
+
+    Route::get('/rewards', [GamificationController::class, 'getRewards']);
+    Route::post('/rewards/{id}/redeem', [GamificationController::class, 'redeemReward']);
+    Route::get('/my-rewards', [GamificationController::class, 'getMyRedemptions']);
 
     // Live Classes
     Route::prefix('live-classes')->group(function () {
@@ -86,31 +87,27 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('parent')->group(function () {
         Route::get('/children', [ParentController::class, 'getChildren']);
         Route::post('/link-child', [ParentController::class, 'linkChild']);
+        Route::get('/child-progress', function (Request $request) {
+            return response()->json($request->user()->load('studentProfile'));
+        });
     });
-    
-    Route::get('/parent/child-progress', function (Request $request) {
-    // For MVP: We will return the current user's data 
-    // (Assuming the parent is logged in as the student for now, 
-    // or we can fetch a specific student ID)
-    return response()->json($request->user()->load('studentProfile'));
-});
 
     // Progress & Analytics
     Route::prefix('progress')->group(function () {
         Route::get('/analytics', [ProgressController::class, 'analytics']);
     });
 
+    // Chat System Routes
+    Route::get('/chat/conversation', [\App\Http\Controllers\Api\ChatController::class, 'getConversation']);
+    Route::post('/chat/message', [\App\Http\Controllers\Api\ChatController::class, 'sendMessage']);
 
     /*
     |--------------------------------------------------------------------------
     | Admin Routes (Founder's Control Room)
     |--------------------------------------------------------------------------
-    | These routes require both a valid login AND is_admin = true.
-    | Handles Requirements: LMS-01, LMS-10, HL-06
     */
     Route::middleware('admin')->prefix('admin')->group(function () {
         
-        // 📊 Admin Stats (For your Control Room Dashboard)
         Route::get('/stats', function () {
             return response()->json([
                 'total_students' => \App\Models\User::where('is_admin', false)->count(),
@@ -120,19 +117,28 @@ Route::middleware('auth:sanctum')->group(function () {
             ]);
         });
 
-        // 📚 Course Management (LMS-01)
-        Route::get('/courses', [CourseController::class, 'index']); // Get all for list
-        Route::post('/courses', [CourseController::class, 'store']); // Create new
-        Route::put('/courses/{id}', [CourseController::class, 'update']); // Edit
+        Route::get('/courses', [CourseController::class, 'index']);
+        Route::post('/courses', [CourseController::class, 'store']);
+        Route::put('/courses/{id}', [CourseController::class, 'update']);
         
-        // 📝 Lesson & Content Management (LMS-02, LMS-10)
-        // This will eventually handle PDF and PPT uploads
         Route::get('/lessons', [LessonController::class, 'index']);
         Route::post('/lessons', [LessonController::class, 'store']);
-    });
-});
 
-// At the very bottom of routes/api.php
+        // Reward Management (Admin Side)
+        Route::get('/reward-redemptions', [GamificationController::class, 'getAllRedemptions']);
+        Route::put('/reward-redemptions/{id}/fulfill', [GamificationController::class, 'fulfillRedemption']);
+        Route::post('/rewards', [GamificationController::class, 'store']);
+
+        // Conversation Management for Admin
+        Route::get('/conversations', [\App\Http\Controllers\Api\ChatController::class, 'getAllConversations']);
+  
+        Route::post('/conversations/{id}/read', [ChatController::class, 'markAsRead']);
+  
+        });
+
+}); // Closes auth:sanctum group
+
+// Fallback for unauthorized access
 Route::get('/login', function () {
     return response()->json(['message' => 'Unauthorized. Please login.'], 401);
 })->name('login');

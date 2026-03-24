@@ -19,6 +19,8 @@ class StudentProfile extends Model
         'total_coins',
     ];
 
+
+
     protected $casts = [
         'date_of_birth' => 'date',
         'total_points' => 'integer',

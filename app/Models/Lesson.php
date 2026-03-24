@@ -41,9 +41,9 @@ public function questions()
     return $this->hasMany(Question::class);
 }
 
-    public function contents()
+   public function contents()
     {
-        return $this->hasMany(LessonContent::class)->orderBy('order_index');
+        return $this->hasMany(LessonContent::class);
     }
 
 
