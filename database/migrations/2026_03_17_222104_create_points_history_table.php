@@ -9,20 +9,18 @@ return new class extends Migration
     /**
      * Run the migrations.
      */
-  public function up(): void
-    {
-        Schema::create('points_history', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('student_id')->constrained('users')->cascadeOnDelete();
-            $table->integer('points');
-            $table->string('reason')->nullable();
-            $table->string('reference_type', 100)->nullable(); // lesson, quiz, assignment
-            $table->unsignedBigInteger('reference_id')->nullable();
-            $table->timestamps();
-
-            $table->index('student_id');
-        });
-    }
+public function up()
+{
+    Schema::create('points_histories', function (Blueprint $table) {
+        $table->id();
+        $table->foreignId('student_id')->constrained('users')->onDelete('cascade');
+        $table->integer('points');
+        $table->string('reason'); // e.g., "Completed Yoruba Quiz"
+        $table->string('reference_type')->nullable(); // e.g., "quiz"
+        $table->unsignedBigInteger('reference_id')->nullable();
+        $table->timestamps();
+    });
+}
 
     /**
      * Reverse the migrations.

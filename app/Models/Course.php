@@ -4,27 +4,49 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Storage;
 
 class Course extends Model
 {
     use HasFactory;
 
-   protected $fillable = [
-    'title',
-    'category', // Added to match migration and LMS-01 
-    'description',
-    'subject',
-    'level',
-    'thumbnail_url',
-    'is_published',
-    'created_by',
-];
+    protected $fillable = [
+        'title',
+        'category',
+        'description',
+        'subject',
+        'level',
+        'thumbnail_url', // 🖼️ This is your DB column for the image path
+        'is_published',
+        'created_by',
+    ];
 
-// This helper will be vital for your Admin Stats 
-public function getActiveStudentsCountAttribute()
+    /**
+     * 🚀 THE IMAGE FIX: THE ACCESSOR
+     * This automatically creates a 'full_thumbnail_url' field in your JSON response.
+     */
+    protected $appends = ['full_thumbnail_url', 'active_students_count', 'total_lessons'];
+
+  // Inside app/Models/Course.php
+
+public function getFullThumbnailUrlAttribute()
 {
-    return $this->enrollments()->where('status', 'active')->count();
+    if (!$this->thumbnail_url) return null;
+
+    // 🚀 THE FIX: If the string already starts with 'storage/', strip it first
+    // This prevents the 'storage//storage/' error in your Network tab
+    $cleanPath = str_replace('storage/', '', $this->thumbnail_url);
+    $cleanPath = ltrim($cleanPath, '/'); // Remove any leading slashes
+
+    return asset('storage/' . $cleanPath);
 }
+
+    // --- EXISTING LOGIC ---
+
+    public function getActiveStudentsCountAttribute()
+    {
+        return $this->enrollments()->where('status', 'active')->count();
+    }
 
     protected $casts = [
         'is_published' => 'boolean',
@@ -62,11 +84,10 @@ public function getActiveStudentsCountAttribute()
         return $query->where('subject', $subject);
     }
 
-    // Calculate total lessons in course
     public function getTotalLessonsAttribute()
     {
         return $this->modules->sum(function ($module) {
-            return $module->lessons->count();
+            return $module->lessons ? $module->lessons->count() : 0;
         });
     }
 }

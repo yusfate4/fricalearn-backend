@@ -6,10 +6,11 @@ use App\Http\Controllers\Controller;
 use App\Services\GamificationService;
 use App\Models\Badge;
 use App\Models\Reward;
-use App\Models\RewardRedemption; // 👈 Don't forget this import!
+use App\Models\RewardRedemption;
+use App\Models\StudentProfile;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Mail;
-use App\Mail\RewardRedeemed;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\DB;
 
 class GamificationController extends Controller
 {
@@ -19,126 +20,215 @@ class GamificationController extends Controller
         $this->gamificationService = $gs;
     }
 
-   public function getLeaderboard()
-{
-    $startOfWeek = \Carbon\Carbon::now()->startOfWeek();
+    /**
+     * 🏆 LEADERBOARD: Fetch Top Students
+     */
+    public function getLeaderboard()
+    {
+        $topStudents = StudentProfile::with('user:id,name')
+            ->orderBy('total_points', 'desc')
+            ->take(10)
+            ->get();
 
-    // Get the top 10 students for the current week
-    $entries = \App\Models\LeaderboardEntry::where('period', 'weekly')
-        ->where('period_start', $startOfWeek->toDateString())
-        ->with('student.studentProfile')
-        ->orderBy('points', 'desc')
-        ->limit(10)
-        ->get();
-
-    return response()->json($entries);
-}
-
-    public function getBadges() {
-        return response()->json(Badge::all());
+        return response()->json($topStudents);
     }
 
     /**
-     * NEW: Fetch all active rewards for the store catalog
+     * 🏪 MARKETPLACE: Fetch all active items for Students
      */
-    public function getRewards()
+    public function getRewardsCatalog()
     {
-        // Only return rewards that are actively available in the store
-        $rewards = Reward::where('is_active', true)->get();
+        $rewards = Reward::where('is_active', true)
+            ->orderBy('created_at', 'desc')
+            ->get();
+            
+        $rewards->transform(function($item) {
+            $item->image_url = $item->image_path 
+                ? (str_starts_with($item->image_path, 'http') ? $item->image_path : asset('storage/' . $item->image_path)) 
+                : null;
+            return $item;
+        });
+
         return response()->json($rewards);
     }
 
     /**
-     * NEW: Process a student buying a reward
+     * 🎒 MY TREASURES: Get student's purchase history
      */
-    public function redeemReward(Request $request, $rewardId)
+    public function getMyRewards(Request $request)
     {
-        $student = $request->user();
-        $reward = Reward::findOrFail($rewardId);
+        // 🚀 Support Parent Impersonation: Priority to the Header
+        $studentId = $request->header('X-Active-Student-Id') ?? $request->user()->id;
 
-        if (!$reward->is_active) {
-            return response()->json(['message' => 'This reward is no longer available.'], 400);
-        }
-
-        // 1. Try to spend the coins using our secure service
-        $purchaseSuccessful = $this->gamificationService->spendCoins($student->id, $reward->cost_coins);
-
-        if (!$purchaseSuccessful) {
-            return response()->json(['message' => 'Oda! Not enough coins to redeem this reward.'], 400);
-        }
-
-        // 2. Record the receipt in the database
-        $redemption = RewardRedemption::create([
-            'student_id' => $student->id,
-            'reward_id' => $reward->id,
-            'coins_spent' => $reward->cost_coins,
-            'status' => 'pending', // Admin will fulfill this later
+        $redemptions = RewardRedemption::with('reward')
+            ->where('student_id', $studentId)
+            ->orderBy('created_at', 'desc')
+            ->get();
             
-        ]);
+        return response()->json($redemptions);
+    }
 
-        // 3. Send email notification to admin (optional)
-        Mail::to('admin@fricalearn.com')->send(new RewardRedeemed($student, $reward));
+    /**
+     * 💰 REDEEM/PURCHASE: Process Reward Purchase
+     * Maps to: POST api/gamification/rewards/{id}/redeem
+     */
+ public function redeemReward(Request $request, $id)
+{
+    $user = $request->user();
+    $activeStudentId = $request->header('X-Active-Student-Id');
+    $targetUserId = ($user->role === 'parent' && $activeStudentId) ? $activeStudentId : $user->id;
+    
+    $reward = Reward::findOrFail($id);
+
+    // 1. Deduct Coins
+    $purchaseSuccessful = $this->gamificationService->spendCoins($targetUserId, $reward->cost_coins);
+    
+    if (!$purchaseSuccessful) {
+        return response()->json(['message' => 'Insufficient XP!'], 400);
+    }
+
+    // 🚀 THE FIX: Always set status to 'pending'
+    // Old logic was: ($reward->type === 'digital_asset') ? 'fulfilled' : 'pending'
+    $status = 'pending'; 
+
+    $redemption = RewardRedemption::create([
+        'student_id' => $targetUserId,
+        'reward_id'  => $reward->id,
+        'coins_spent' => $reward->cost_coins,
+        'status'     => $status, // Now always starts as pending
+    ]);
+
+    $newBalance = StudentProfile::where('user_id', $targetUserId)->first()->total_coins;
+
+    return response()->json([
+        'message' => 'Request sent! Admin will fulfill your reward soon.',
+        'remaining_coins' => $newBalance
+    ], 200);
+}
+    /**
+     * ✅ ONBOARDING: Award initial points
+     */
+    public function completeOnboarding(Request $request)
+    {
+        $user = $request->user();
+        $profile = $user->studentProfile()->firstOrCreate(['user_id' => $user->id]);
+
+        if ($profile->onboarding_completed) {
+            return response()->json(['message' => 'Onboarding already completed'], 200);
+        }
+
+        $profile->total_points += 100;
+        $profile->total_coins += 50;
+        $profile->onboarding_completed = true; 
+        $profile->save();
 
         return response()->json([
-            'message' => 'Reward redeemed successfully!',
-            'redemption' => $redemption,
-            'remaining_coins' => $student->studentProfile->fresh()->total_coins
-        ], 200);
+            'message' => 'Welcome to FricaLearn!',
+            'points_awarded' => 100,
+            'profile' => $profile
+        ]);
     }
-    /**
-     * STUDENT: Get all rewards this specific student has bought
-     */
-    public function getMyRedemptions(Request $request)
-    {
-        $redemptions = RewardRedemption::with('reward')
-            ->where('student_id', $request->user()->id)
-            ->orderBy('created_at', 'desc')
-            ->get();
-            
-        return response()->json($redemptions);
-    }
-
-    /**
-     * ADMIN: Get all redemptions from all students
-     */
-    public function getAllRedemptions()
-    {
-        $redemptions = RewardRedemption::with(['reward', 'student'])
-            ->orderBy('created_at', 'desc')
-            ->get();
-            
-        return response()->json($redemptions);
+    
+public function earn(Request $request)
+{
+    $user = $request->user();
+    $points = $request->input('points', 0);
+    
+    // Ensure the user has a student profile
+    $profile = $user->studentProfile;
+    if (!$profile) {
+        return response()->json(['error' => 'No student profile found'], 404);
     }
 
-    /**
-     * ADMIN: Mark a redemption as fulfilled
-     */
-    public function fulfillRedemption($id)
+    $profile->increment('total_points', $points);
+
+    return response()->json([
+        'status' => 'success',
+        'points_earned' => $points,
+        'new_total' => $profile->total_points
+    ]);
+}
+    /*
+    |--------------------------------------------------------------------------
+    | 👑 ADMIN METHODS
+    |--------------------------------------------------------------------------
+    */
+
+    public function getRewards() 
     {
-        $redemption = RewardRedemption::findOrFail($id);
-        $redemption->update(['status' => 'fulfilled']);
-        
-        return response()->json(['message' => 'Reward marked as fulfilled!']);
+        return response()->json(Reward::latest()->get());
     }
 
-    /**
-     * ADMIN: Create a new reward for the store
-     */
     public function store(Request $request)
     {
         $validated = $request->validate([
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
             'cost_coins' => 'required|integer|min:1',
-            'type' => 'required|in:digital_voucher,platform_credit,educational_product',
-            'is_active' => 'boolean'
+            'type' => 'required|in:digital_asset,physical,service,digital_voucher,educational_product',
+            'image' => 'nullable|image|max:10240', 
+            'product_file' => 'nullable|file|mimes:pdf|max:10240',
         ]);
 
-        $reward = Reward::create($validated);
+        $imagePath = $request->hasFile('image') ? $request->file('image')->store('marketplace', 'public') : null;
+        $filePath = $request->hasFile('product_file') ? $request->file('product_file')->store('marketplace/files', 'public') : null;
 
-        return response()->json([
-            'message' => 'New reward added to the store!',
-            'reward' => $reward
-        ], 201);
+        $reward = Reward::create([
+            'title' => $validated['title'],
+            'description' => $validated['description'],
+            'cost_coins' => $validated['cost_coins'],
+            'type' => $validated['type'],
+            'image_path' => $imagePath,
+            'file_path' => $filePath,
+            'is_active' => true,
+        ]);
+
+        return response()->json(['message' => 'Item created!', 'reward' => $reward], 201);
     }
+
+    public function update(Request $request, $id)
+    {
+        $reward = Reward::findOrFail($id);
+        $validated = $request->validate([
+            'title' => 'required|string|max:255',
+            'cost_coins' => 'required|integer|min:1',
+            'type' => 'required',
+        ]);
+
+        if ($request->hasFile('image')) {
+            if ($reward->image_path) Storage::disk('public')->delete($reward->image_path);
+            $reward->image_path = $request->file('image')->store('marketplace', 'public');
+        }
+
+        $reward->update(array_merge($validated, ['image_path' => $reward->image_path]));
+        return response()->json(['message' => 'Updated!', 'reward' => $reward]);
+    }
+
+    public function destroy($id)
+    {
+        $reward = Reward::findOrFail($id);
+        if ($reward->image_path) Storage::disk('public')->delete($reward->image_path);
+        $reward->delete();
+        return response()->json(['message' => 'Deleted']);
+    }
+
+    public function getAllRedemptions()
+    {
+        $redemptions = RewardRedemption::with(['student:id,name,email', 'reward:id,title,image_path,type'])
+            ->latest()->get();
+        return response()->json($redemptions);
+    }
+
+  public function fulfillRedemption($id)
+{
+    $redemption = RewardRedemption::findOrFail($id);
+    
+    // 🚀 Change status from pending to fulfilled
+    $redemption->update(['status' => 'fulfilled']);
+
+    return response()->json([
+        'message' => 'Order fulfilled! The student can now access their reward.',
+        'redemption' => $redemption
+    ]);
+}
 }

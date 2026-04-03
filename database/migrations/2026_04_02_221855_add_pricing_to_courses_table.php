@@ -9,11 +9,11 @@ return new class extends Migration
     /**
      * Run the migrations.
      */
- public function up(): void
+  public function up()
 {
-    Schema::table('users', function (Blueprint $table) {
-        // Default is 0 (False), so everyone starts as a student
-        $table->boolean('is_admin')->default(false)->after('email');
+    Schema::table('courses', function (Blueprint $table) {
+        $table->decimal('price_ngn', 10, 2)->default(30000.00);
+        $table->decimal('price_gbp', 10, 2)->default(20.00);
     });
 }
 
@@ -22,7 +22,7 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('users', function (Blueprint $table) {
+        Schema::table('courses', function (Blueprint $table) {
             //
         });
     }

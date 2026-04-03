@@ -11,6 +11,9 @@ class User extends Authenticatable
 {
     use HasApiTokens, HasFactory, Notifiable;
 
+    /**
+     * The attributes that are mass assignable.
+     */
     protected $fillable = [
         'name',
         'email',
@@ -23,18 +26,30 @@ class User extends Authenticatable
         'is_active',
     ];
 
+    /**
+     * The attributes that should be hidden for serialization.
+     */
     protected $hidden = [
         'password',
         'remember_token',
     ];
 
+    /**
+     * The attributes that should be cast.
+     */
     protected $casts = [
         'email_verified_at' => 'datetime',
         'last_login_at' => 'datetime',
         'is_active' => 'boolean',
+        'is_admin' => 'boolean',
     ];
 
-    // Relationships
+    /*
+    |--------------------------------------------------------------------------
+    | Student & Tutor Profiles
+    |--------------------------------------------------------------------------
+    */
+
     public function studentProfile()
     {
         return $this->hasOne(StudentProfile::class);
@@ -45,31 +60,101 @@ class User extends Authenticatable
         return $this->hasOne(TutorProfile::class);
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | Parent & Child Linking Logic (The "Bridge")
+    |--------------------------------------------------------------------------
+    */
+
+    /**
+     * RELATIONSHIP: For the Parent to see their Children.
+     * Uses the 'parent_child' pivot table.
+     */
+    public function children()
+    {
+        return $this->belongsToMany(
+            User::class,
+            'parent_child', // Pivot table name
+            'parent_id',    // Foreign key for Parent
+            'child_id'      // Foreign key for Child
+        )
+        ->withPivot('relationship')
+        ->withTimestamps();
+    }
+
+    /**
+     * RELATIONSHIP: For the Child to see their Parent(s).
+     */
+    public function parents()
+    {
+        return $this->belongsToMany(
+            User::class,
+            'parent_child',
+            'child_id',
+            'parent_id'
+        )
+        ->withPivot('relationship')
+        ->withTimestamps();
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Academic & Progress Relationships
+    |--------------------------------------------------------------------------
+    */
+
     public function enrollments()
     {
         return $this->hasMany(CourseEnrollment::class, 'student_id');
     }
 
-   public function progressRecords()
-{
-    // 🚨 Add 'user_id' as the second parameter to fix the "student_id not found" error
-    return $this->hasMany(ProgressRecord::class, 'user_id');
-}
-    public function children()
+    public function progressRecords()
     {
-        return $this->belongsToMany(User::class, 'parent_student_links', 'parent_id', 'student_id')
-            ->withPivot('relationship')
-            ->withTimestamps();
+        return $this->hasMany(ProgressRecord::class, 'user_id');
     }
 
-    public function parents()
+    public function quizAttempts()
     {
-        return $this->belongsToMany(User::class, 'parent_student_links', 'student_id', 'parent_id')
-            ->withPivot('relationship')
-            ->withTimestamps();
+        return $this->hasMany(QuizAttempt::class, 'student_id');
     }
 
-    // Scopes
+    public function pointsHistory()
+    {
+        return $this->hasMany(PointsHistory::class, 'student_id');
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Role Helper Methods
+    |--------------------------------------------------------------------------
+    */
+
+    public function isAdmin(): bool
+    {
+        return (bool)$this->is_admin || $this->role === 'admin';
+    }
+
+    public function isStudent(): bool
+    {
+        return $this->role === 'student';
+    }
+
+    public function isParent(): bool
+    {
+        return $this->role === 'parent';
+    }
+
+    public function isTutor(): bool
+    {
+        return $this->role === 'tutor';
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Scopes
+    |--------------------------------------------------------------------------
+    */
+
     public function scopeStudents($query)
     {
         return $query->where('role', 'student');
@@ -85,24 +170,25 @@ class User extends Authenticatable
         return $query->where('is_active', true);
     }
 
-    // Helper methods
-    public function isStudent(): bool
-    {
-        return $this->role === 'student';
-    }
+    /*
+    |--------------------------------------------------------------------------
+    | Accessors (Custom Attributes)
+    |--------------------------------------------------------------------------
+    */
 
-    public function isTutor(): bool
+    /**
+     * Returns a professional display name for Admin sidebars.
+     * Example: "Dahud Yusuf (Parent of Sodiq)"
+     */
+    public function getAdminDisplayNameAttribute()
     {
-        return $this->role === 'tutor';
-    }
-
-    public function isAdmin(): bool
-    {
-        return $this->role === 'admin';
-    }
-
-    public function isParent(): bool
-    {
-        return $this->role === 'parent';
+        if ($this->role === 'parent') {
+            $childrenNames = $this->children->pluck('name')->implode(', ');
+            return $childrenNames 
+                ? "{$this->name} (Parent of {$childrenNames})" 
+                : "{$this->name} (Parent)";
+        }
+        
+        return $this->name;
     }
 }

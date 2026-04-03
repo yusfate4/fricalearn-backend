@@ -6,32 +6,33 @@ use App\Http\Controllers\Controller;
 use App\Models\Conversation;
 use App\Models\Message;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 
 class ChatController extends Controller
 {
     /**
-     * Get or Create a conversation (Used by both Student and Admin)
+     * 🚪 Get or Create a conversation (Universal)
      */
     public function getConversation(Request $request)
     {
         $user = $request->user();
-        $adminId = 1; // Yusuf's Admin ID
+        $adminId = 1; // Yusuf's Admin ID (The Tutor)
 
-        // Logic: If Admin, they MUST send ?student_id=X. 
-        // If Student, we ignore the query and use their own ID.
-        $studentId = ($user->is_admin == 1) ? $request->query('student_id') : $user->id;
+        // If admin is viewing a specific student, or a student is starting a chat
+        $participantId = ($user->role === 'admin' || $user->is_admin == 1) 
+            ? $request->query('participant_id') 
+            : $user->id;
 
-        if (!$studentId) {
-            return response()->json(['message' => 'Student identification failed.'], 400);
+        if (!$participantId) {
+            return response()->json(['message' => 'Participant ID is required.'], 400);
         }
 
-        // Find or create the unique chat for this student-tutor pair
+        // Find or Create the "Room"
         $conversation = Conversation::firstOrCreate([
-            'student_id' => $studentId,
+            'student_id' => $participantId,
             'tutor_id' => $adminId,
         ]);
 
-        // Load ALL messages without the limit(1) restriction
         return response()->json($conversation->load([
             'messages.sender', 
             'student', 
@@ -40,117 +41,129 @@ class ChatController extends Controller
     }
 
     /**
-     * Send a new message
+     * 📩 Send a new message
+     * Supports both 'conversation_id' or 'receiver_id' to prevent 422 errors
      */
-
-
     public function sendMessage(Request $request)
     {
         $user = $request->user();
         
         $request->validate([
-            'conversation_id' => 'required|exists:conversations,id',
-            'message' => 'nullable|string',
-            'image' => 'nullable|image|max:5120',
-            'audio' => 'nullable|file|max:10240', // 👈 Accept audio files up to 10MB
+            'conversation_id' => 'nullable|exists:conversations,id',
+            'receiver_id'     => 'nullable|exists:users,id', // 🚀 Fallback for simpler frontend logic
+            'message'         => 'required_without_all:image,audio|string|nullable',
+            'image'           => 'nullable|image|max:5120',
+            'audio'           => 'nullable|file|max:10240',
         ]);
 
-        // Require at least text OR an image OR an audio note
-        if (!$request->message && !$request->hasFile('image') && !$request->hasFile('audio')) {
-            return response()->json(['error' => 'Cannot send an empty message'], 422);
+        // 1. Resolve the Conversation
+        if ($request->conversation_id) {
+            $conversation = Conversation::findOrFail($request->conversation_id);
+        } else {
+            // If no convo_id, find/create one using the receiver_id
+            $conversation = Conversation::firstOrCreate([
+                'student_id' => $user->role === 'admin' ? $request->receiver_id : $user->id,
+                'tutor_id'   => $user->role === 'admin' ? $user->id : ($request->receiver_id ?? 1),
+            ]);
         }
-
-        $conversation = Conversation::find($request->conversation_id);
         
+        // 2. Security Check
         if ($conversation->student_id != $user->id && $conversation->tutor_id != $user->id) {
             return response()->json(['message' => 'Unauthorized chat access'], 403);
         }
 
-        // Handle Image
-        $imagePath = null;
-        if ($request->hasFile('image')) {
-            $imagePath = $request->file('image')->store('chat_media', 'public'); 
-        }
+        // 3. Handle Media (Clean paths)
+        $imagePath = $request->hasFile('image') 
+            ? $request->file('image')->store('chat_media', 'public') 
+            : null;
 
-        // 👈 Handle Audio
-        $audioPath = null;
-        if ($request->hasFile('audio')) {
-            // Save inside storage/app/public/chat_audio
-            $audioPath = $request->file('audio')->store('chat_audio', 'public'); 
-        }
+        $audioPath = $request->hasFile('audio') 
+            ? $request->file('audio')->store('chat_audio', 'public') 
+            : null;
 
+        // 4. Save Message
         $message = Message::create([
-            'conversation_id' => $request->conversation_id,
-            'sender_id' => $user->id,
-            'message' => $request->message ?? '',
-            'image_path' => $imagePath,
-            'audio_path' => $audioPath,
+            'conversation_id' => $conversation->id,
+            'sender_id'       => $user->id,
+            'message'         => $request->message ?? '',
+            'image_path'      => $imagePath,
+            'audio_path'      => $audioPath,
+            'is_read'         => false,
         ]);
 
+        // Bump conversation to top of list
         $conversation->touch();
 
-        return response()->json($message->load('sender'));
+        return response()->json($message->load('sender'), 201);
     }
+
     /**
-     * ADMIN: Get all conversations for the master list sidebar
+     * 👑 ADMIN: Master list of all chats
      */
-    public function getAllConversations()
+    public function getAdminConversations()
     {
-        // Fetch all chats including the student's name and all messages
-        // Removed the ->limit(1) so the Admin sees the full history
-        $conversations = Conversation::with(['student', 'messages'])
+        $conversations = Conversation::with(['student', 'latestMessage'])
             ->orderBy('updated_at', 'desc')
             ->get();
 
-        return response()->json($conversations);
+        $formatted = $conversations->map(function($convo) {
+            return [
+                'id'           => $convo->id,
+                'display_name' => $convo->student->name ?? 'Student #'.$convo->student_id, 
+                'last_message' => $convo->latestMessage->message ?? '📎 Media shared',
+                'updated_at'   => $convo->updated_at->diffForHumans(),
+                'unread_count' => $convo->messages()->where('is_read', false)->where('sender_id', '!=', auth()->id())->count(),
+                'student_id'   => $convo->student_id
+            ];
+        });
+
+        return response()->json($formatted);
     }
 
     /**
-     * Mark all messages in a conversation as read (Admin only)
+     * 👑 ADMIN: Messages for one student
      */
-/**
- * 👁️ Mark all messages in a conversation as read by the Admin.
- */
-public function markAsRead($id)
-{
-    // Update all messages sent by the student to 'is_read = true'
-    \App\Models\Message::where('conversation_id', $id)
-        ->where('sender_id', '!=', auth()->id())
-        ->update(['is_read' => true]);
+  /**
+     * 👑 ADMIN: Messages for one student
+     */
+    public function getAdminMessages($id)
+    {
+        $messages = Message::where('conversation_id', $id)
+            ->with('sender')
+            ->orderBy('created_at', 'asc')
+            ->get();
 
-    return response()->json(['message' => 'Conversation marked as read']);
-}
+        // ✅ This internal call now works because we fixed the signature in the last step
+        $this->markAsRead($id);
+
+        return response()->json($messages);
+    }
 
     /**
- * 👨‍🏫 Fetch all conversations for the Admin dashboard.
- * This allows Yusuf to see every student who has started a chat.
- */
-public function getAdminConversations()
-{
-    // We pull conversations with the student details and the last message sent
-    $conversations = \App\Models\Conversation::with(['student', 'latestMessage'])
-        ->orderBy('updated_at', 'desc')
-        ->get();
+     * ✅ Mark as Read Logic
+     */
+ /**
+     * ✅ Mark as Read Logic
+     * Works both as an API route and an internal method call.
+     */
+    public function markAsRead($id)
+    {
+        // 📩 Logic: Update all messages in this conversation where 'is_read' is false
+        // We target messages NOT sent by the current user (the admin)
+        $updated = Message::where('conversation_id', $id)
+            ->where('is_read', false)
+            ->where('sender_id', '!=', auth()->id())
+            ->update(['is_read' => true]);
 
-    return response()->json($conversations);
-}
+        // If called as an API route, return JSON. 
+        // If called internally by getAdminMessages, just return the count.
+        if (request()->wantsJson() || request()->ajax()) {
+            return response()->json([
+                'status' => 'success',
+                'messages_updated' => $updated
+            ]);
+        }
 
-/**
- * 💬 Fetch messages for a specific conversation.
- * This is used by both the student and the admin.
- */
-public function getMessages($id)
-{
-    $messages = \App\Models\Message::where('conversation_id', $id)
-        ->with('sender')
-        ->orderBy('created_at', 'asc')
-        ->get();
-
-    // Mark messages as read if the recipient is opening them
-    \App\Models\Message::where('conversation_id', $id)
-        ->where('sender_id', '!=', auth()->id())
-        ->update(['is_read' => true]);
-
-    return response()->json($messages);
-}
+        return $updated;
+    }
 }

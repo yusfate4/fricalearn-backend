@@ -35,31 +35,47 @@ class AnalyticsController extends Controller
      * 2. DETAILED STUDENT STATS (Private)
      * Used by Student Portal & Admin User Registry
      */
+  /**
+     * 2. DETAILED STUDENT STATS (Refined for Parent Impersonation)
+     * Used by Student Portal & Parents viewing as Students
+     */
     public function studentStats(Request $request, $userId = null)
     {
-        // Safety: If an ID is provided, check if the person asking is an Admin
-        if ($userId && !$request->user()->is_admin) {
-            return response()->json(['message' => 'Unauthorized'], 403);
+        $user = $request->user();
+        
+        // 🚀 THE SWITCHER LOGIC
+        // 1. If an Admin passes an ID in the URL, use that.
+        // 2. If a Parent sends the 'X-Active-Student-Id' header, use that.
+        // 3. Otherwise, use the logged-in user's own ID (Standard Student login).
+        
+        $headerStudentId = $request->header('X-Active-Student-Id');
+        
+        if ($userId && $user->is_admin) {
+            $targetId = $userId;
+        } elseif ($headerStudentId && $user->role === 'parent') {
+            // 🔒 Security: Verify this student is actually linked to this parent
+            $isChild = $user->children()->where('child_id', $headerStudentId)->exists();
+            $targetId = $isChild ? $headerStudentId : $user->id;
+        } else {
+            $targetId = $user->id;
         }
 
-        // Use the ID from URL, otherwise use the logged-in student
-        $targetId = $userId ?? $request->user()->id;
-        $user = User::with(['studentProfile', 'progressRecords.lesson'])->findOrFail($targetId);
+        // Fetch the data for the determined Target ID
+        $student = User::with(['studentProfile', 'progressRecords.lesson'])->findOrFail($targetId);
 
         return response()->json([
-            'student_name'  => $user->name,
-            'total_lessons' => $user->progressRecords()->where('status', 'completed')->count(),
-            'avg_score'     => $user->progressRecords()->avg('score') ?? 0,
-            'total_points'  => $user->studentProfile->total_points ?? 0,
-            'total_coins'   => $user->studentProfile->total_coins ?? 0,
-            'recent_activity' => $user->progressRecords()
+            'student_name'    => $student->name,
+            'total_lessons'   => $student->progressRecords()->where('status', 'completed')->count(),
+            'avg_score'       => $student->progressRecords()->avg('score') ?? 0,
+            'total_points'    => $student->studentProfile->total_points ?? 0,
+            'total_coins'     => $student->studentProfile->total_coins ?? 0,
+            'recent_activity' => $student->progressRecords()
                 ->with('lesson')
                 ->latest()
                 ->take(5)
                 ->get()
         ]);
     }
-
     /**
      * 3. PUBLIC STUDENT STATS (For Parents)
      * No login required, but limited data for privacy

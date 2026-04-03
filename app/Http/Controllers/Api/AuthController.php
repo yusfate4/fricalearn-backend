@@ -16,7 +16,7 @@ class AuthController extends Controller
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'email' => 'required|string|email|max:255|unique:users',
-            'password' => 'required|string|min:8|confirmed',
+            'password' => 'required|string|min:8',
             'role' => 'required|in:student,parent,tutor',
             'country' => 'nullable|string|max:100',
             'timezone' => 'nullable|string|max:100',
@@ -48,8 +48,13 @@ class AuthController extends Controller
 
         $token = $user->createToken('auth_token')->plainTextToken;
 
+        /**
+         * 🚀 Load relevant profiles based on role
+         */
+        $loadRelations = $user->role === 'parent' ? ['children'] : ['studentProfile'];
+
         return response()->json([
-            'user' => $user->load('studentProfile'),
+            'user' => $user->load($loadRelations),
             'token' => $token,
         ], 201);
     }
@@ -80,8 +85,11 @@ class AuthController extends Controller
 
         $token = $user->createToken('auth_token')->plainTextToken;
 
+        /**
+         * 🚀 Load children for parents and profiles for students/tutors
+         */
         return response()->json([
-            'user' => $user->load(['studentProfile', 'tutorProfile']),
+            'user' => $user->load(['studentProfile', 'tutorProfile', 'children.studentProfile']),
             'token' => $token,
         ]);
     }
@@ -95,9 +103,17 @@ class AuthController extends Controller
         ]);
     }
 
-   public function me(Request $request)
-{
-    // load('studentProfile') is the magic part!
-    return response()->json($request->user()->load('studentProfile'));
-}
+    /**
+     * Get the authenticated user with all relevant context
+     */
+    public function me(Request $request)
+    {
+        $user = $request->user();
+
+        // Dynamically load data so the frontend has everything it needs
+        return response()->json($user->load([
+            'studentProfile', 
+            'children.studentProfile' // 👈 Essential for the Parent Dashboard
+        ]));
+    }
 }

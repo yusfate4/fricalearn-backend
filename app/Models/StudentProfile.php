@@ -11,12 +11,16 @@ class StudentProfile extends Model
 
     protected $fillable = [
         'user_id',
+        'parent_id', // 🚀 NEW: Link to the parent account
         'date_of_birth',
         'grade_level',
         'learning_language',
         'current_level',
         'total_points',
         'total_coins',
+        'learning_goal',
+    'starting_level',
+    'onboarding_completed',
     ];
 
     protected $casts = [
@@ -26,7 +30,11 @@ class StudentProfile extends Model
         'current_level' => 'integer',
     ];
 
-    // --- Relationships ---
+    /*
+    |--------------------------------------------------------------------------
+    | Relationships
+    |--------------------------------------------------------------------------
+    */
 
     public function user()
     {
@@ -34,7 +42,15 @@ class StudentProfile extends Model
     }
 
     /**
-     * Relationship to the Badge model via the pivot table seen in migrations.
+     * Relationship: A Student Profile belongs to a Parent
+     */
+    public function parent()
+    {
+        return $this->belongsTo(User::class, 'parent_id');
+    }
+
+    /**
+     * Relationship to the Badge model via the pivot table
      */
     public function badges()
     {
@@ -44,17 +60,21 @@ class StudentProfile extends Model
     }
 
     /**
-     * Connects the current_level integer to the actual Level model data.
+     * Connects the current_level integer to the actual Level model data
      */
     public function level()
     {
         return $this->belongsTo(Level::class, 'current_level', 'level_number');
     }
 
-    // --- Points & Coins Logic ---
+    /*
+    |--------------------------------------------------------------------------
+    | Points & Coins Logic
+    |--------------------------------------------------------------------------
+    */
 
     /**
-     * Core method to award points. Returns true if the student leveled up.
+     * Core method to award points. Returns true if the student leveled up
      */
     public function addPoints(int $points, string $reason, string $referenceType = null, int $referenceId = null): bool
     {
@@ -87,7 +107,7 @@ class StudentProfile extends Model
     }
 
     /**
-     * Compares total points against the 'levels' table to see if a promotion is due.
+     * Compares total points against the 'levels' table to see if a promotion is due
      */
     private function checkLevelUp(): bool
     {
@@ -98,20 +118,20 @@ class StudentProfile extends Model
 
         if ($eligibleLevel && $eligibleLevel->level_number > $this->current_level) {
             $this->update(['current_level' => $eligibleLevel->level_number]);
-            
-            // Optional: You can fire an event here for real-time socket updates later
-            // event(new \App\Events\StudentLeveledUp($this, $eligibleLevel));
-            
             return true; 
         }
         
         return false;
     }
 
-    // --- Accessors (For Frontend Display) ---
+    /*
+    |--------------------------------------------------------------------------
+    | Accessors (For Frontend Display)
+    |--------------------------------------------------------------------------
+    */
 
     /**
-     * Returns a cultural title based on point milestones.
+     * Returns a cultural title based on point milestones
      */
     public function getRankAttribute()
     {
@@ -126,7 +146,7 @@ class StudentProfile extends Model
     }
 
     /**
-     * Calculates how much XP is needed to reach the next level threshold.
+     * Calculates how much XP is needed to reach the next level threshold
      */
     public function getXpToNextLevelAttribute()
     {

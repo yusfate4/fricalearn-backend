@@ -3,140 +3,167 @@
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
-// Import all controllers
+// --- 🎮 Import All Controllers ---
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CourseController;
 use App\Http\Controllers\Api\LessonController;
-use App\Http\Controllers\Api\QuizController;
-use App\Http\Controllers\Api\AssignmentController;
 use App\Http\Controllers\Api\GamificationController;
 use App\Http\Controllers\Api\LiveClassController;
 use App\Http\Controllers\Api\ParentController;
-use App\Http\Controllers\Api\ProgressController;
 use App\Http\Controllers\Api\QuestionController;
 use App\Http\Controllers\Api\ChatController;
 use App\Http\Controllers\Api\AnalyticsController; 
+use App\Http\Controllers\Api\ParentAnalyticsController; 
 use App\Http\Controllers\Api\Admin\AIQuizController;
 use App\Http\Controllers\Api\Student\AIHintController;
-use App\Http\Controllers\Api\Student\PronunciationController;
+use App\Http\Controllers\Api\AiController;
+use App\Http\Controllers\Api\PaymentController;
+use App\Http\Controllers\Api\RewardController;
 
 /*
 |--------------------------------------------------------------------------
-| Public Routes
+| 🔓 Public Routes
 |--------------------------------------------------------------------------
 */
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
-
-// 👨‍👩‍👧‍👦 PUBLIC PARENT VIEW
 Route::get('/public/analytics/{studentId}', [AnalyticsController::class, 'publicStudentStats']);
+
+// 📅 AI Global Schedule (Publicly viewable for timer math)
+Route::get('/ai/active-schedule', [AiController::class, 'getActiveSchedule']);
 
 /*
 |--------------------------------------------------------------------------
-| Protected Routes (Sanctum)
+| 🔐 Protected Routes (Sanctum)
 |--------------------------------------------------------------------------
 */
 Route::middleware('auth:sanctum')->group(function () {
-    
-    // Auth Management
+
+    // 👤 --- AUTH & IDENTITY ---
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/me', [AuthController::class, 'me']);
+
+    // 📚 --- COURSES & LESSONS ---
+    Route::get('/courses', [CourseController::class, 'index']);
+    Route::get('/courses/{id}', [CourseController::class, 'show']);
     
-    // 📊 Student Personal Analytics
-    Route::get('/student/analytics', [AnalyticsController::class, 'studentStats']);
-
-    // ✨ AI Tools for Students (Phase 2)
-    Route::post('/ai/hint', [AIHintController::class, 'getHint']);
-    Route::post('/ai/verify-pronunciation', [PronunciationController::class, 'verify']);
-
-    // Courses & Lessons (Student Access)
-    Route::prefix('courses')->group(function () {
-        Route::get('/', [CourseController::class, 'index']);
-        Route::get('/{id}', [CourseController::class, 'show']);
-        Route::post('/{id}/enroll', [CourseController::class, 'enroll']);
-        Route::get('/my/enrollments', [CourseController::class, 'myEnrollments']);
-    });
-
     Route::prefix('lessons')->group(function () {
         Route::get('/{id}', [LessonController::class, 'show']);
-        Route::post('/{id}/start', [LessonController::class, 'start']);
         Route::post('/{id}/complete', [LessonController::class, 'complete']);
         Route::get('/{id}/questions', [LessonController::class, 'getQuestions']); 
     });
+
+    // 📊 --- ANALYTICS & AI HELPERS ---
+    Route::get('/student/analytics', [AnalyticsController::class, 'studentStats']);
+    Route::post('/ai/hint', [AIHintController::class, 'getHint']);
+    Route::post('/ai/chat-olu', [AiController::class, 'chatWithOlu']);
     
-    // Student Chat System
+    /** * 🎙️ AI PRONUNCIATION: Now handles Whisper transcription & Silence check
+     * Note: We moved this here to ensure it is protected by Sanctum
+     */
+    Route::post('/ai/verify-pronunciation', [AiController::class, 'verifyPronunciation']);
+
+    // 🏆 --- GAMIFICATION (Student View) ---
+    Route::prefix('gamification')->group(function () {
+        Route::get('/leaderboard', [GamificationController::class, 'getLeaderboard']);
+        Route::get('/rewards', [GamificationController::class, 'getRewardsCatalog']);
+        Route::get('/my-rewards', [GamificationController::class, 'getMyRewards']);
+        Route::post('/rewards/{id}/redeem', [GamificationController::class, 'redeemReward']);
+        Route::post('/earn', [GamificationController::class, 'earn']);
+    });
+
+    // 💬 --- CHAT SYSTEM (Student/Parent View) ---
     Route::prefix('chat')->group(function () {
         Route::get('/conversation', [ChatController::class, 'getConversation']);
         Route::post('/message', [ChatController::class, 'sendMessage']);
     });
 
-    // 🎁 Gamification & Rewards (Student Side)
-    Route::prefix('gamification')->group(function () {
-        Route::get('/leaderboard', [GamificationController::class, 'getLeaderboard']);
-        Route::get('/rewards', [GamificationController::class, 'getRewards']);
-        Route::post('/rewards/{id}/redeem', [GamificationController::class, 'redeemReward']);
+    // 👨‍👩‍👧‍👦 --- PARENT PORTAL ---
+    Route::prefix('parent')->group(function () {
+        Route::get('/dashboard', [ParentController::class, 'getDashboardData']);
+        Route::get('/children', [ParentController::class, 'getChildren']);
+        Route::post('/register-child', [ParentController::class, 'registerChild']);
+        Route::post('/switch-to-child/{childId}', [ParentController::class, 'switchToChild']);
+        Route::get('/active-student/{id}', [ParentController::class, 'getActiveStudentProfile']);
+        Route::get('/child-stats/{childId}', [ParentAnalyticsController::class, 'getChildStats']);
+        Route::post('/payments/submit', [PaymentController::class, 'submitPayment']); 
     });
 
-    /**
-     * 🚀 FALLBACK ROUTES
-     */
-    Route::get('/rewards', [GamificationController::class, 'getRewards']);
-    Route::get('/leaderboard', [GamificationController::class, 'getLeaderboard']);
+    // Shared Features
+    Route::get('/parent/courses', [CourseController::class, 'getParentCourses']);
+    Route::get('/live-classes', [LiveClassController::class, 'index']);
 
     /*
     |--------------------------------------------------------------------------
-    | Admin-Only Protected Routes
+    | 👑 ADMIN ROUTES
     |--------------------------------------------------------------------------
     */
-    Route::middleware('admin')->group(function () {
+    Route::middleware('admin')->prefix('admin')->group(function () {
         
-        // Matches: api/lessons/{id}/content
-        Route::post('/lessons/{id}/content', [LessonController::class, 'uploadContent']);
-    
-        Route::prefix('admin')->group(function () {
-            
-            // 📊 Admin Stats
-            Route::get('/stats', [AnalyticsController::class, 'adminStats']);
+        // 📈 Admin Dashboard Stats
+        Route::get('/stats', [AnalyticsController::class, 'adminStats']);
 
-            // 👨‍🎓 User Management
-            Route::get('/users', function() {
-                return response()->json(\App\Models\User::with('studentProfile')->get());
-            });
-            Route::get('/analytics/{userId}', [AnalyticsController::class, 'studentStats']);
+        // 💬 --- ADMIN CHAT MANAGEMENT ---
+        Route::prefix('conversations')->group(function () {
+            Route::get('/', [ChatController::class, 'getAdminConversations']); 
+            Route::get('/{id}/messages', [ChatController::class, 'getAdminMessages']); // Fetch full chat
+            Route::post('/{id}/read', [ChatController::class, 'markAsRead']);         // Set read status
+        });
 
-            // 📝 Subject Management
-            Route::get('/courses', [CourseController::class, 'index']); 
-            Route::post('/courses', [CourseController::class, 'store']);
-            Route::put('/courses/{id}', [CourseController::class, 'update']);
-            
-            // 📝 Lesson Management
-            Route::get('/lessons', [LessonController::class, 'index']);
-            Route::post('/lessons', [LessonController::class, 'store']);
-            Route::put('/lessons/{id}', [LessonController::class, 'update']); 
-            Route::delete('/lessons/{id}', [LessonController::class, 'destroy']); 
-            
-            Route::post('/questions', [QuestionController::class, 'store']);
+        // 🏗️ --- COURSE & LESSON MANAGEMENT ---
+        Route::prefix('courses')->group(function () {
+            Route::get('/', [CourseController::class, 'index']); // 👈 Fixed: Now allows GET for Question dropdowns
+            Route::post('/', [CourseController::class, 'store']);
+            Route::post('/{id}', [CourseController::class, 'update']); 
+            Route::delete('/{id}', [CourseController::class, 'destroy']);
+        });
 
-            // 🤖 Admin AI Tools
-            Route::post('/ai/generate-quiz', [AIQuizController::class, 'generate']);
+        Route::prefix('lessons')->group(function () {
+            Route::get('/', [LessonController::class, 'index']);
+            Route::post('/', [LessonController::class, 'store']);
+            Route::post('/{id}', [LessonController::class, 'update']); 
+            Route::delete('/{id}', [LessonController::class, 'destroy']); 
+        });
 
-            // 📦 Reward Management
-            Route::get('/rewards', [GamificationController::class, 'getRewards']);
-            Route::get('/reward-redemptions', [GamificationController::class, 'getAllRedemptions']);
-            Route::put('/reward-redemptions/{id}/fulfill', [GamificationController::class, 'fulfillRedemption']);
+        // 📝 --- QUIZ & AI TOOLS ---
+        Route::get('/questions', [QuestionController::class, 'index']); // Added for management table
+        Route::post('/questions', [QuestionController::class, 'store']);
+        Route::post('/ai/generate-quiz', [AIQuizController::class, 'generate']);
+        Route::post('/update-schedule', [AiController::class, 'updateSchedule']);
 
-            /**
-             * 💬 ADMIN CHAT SYSTEM
-             */
-            Route::get('/conversations', [ChatController::class, 'getAdminConversations']);
-            Route::get('/conversations/{id}/messages', [ChatController::class, 'getMessages']);
-            // 🚀 FIXED: Added the 'read' endpoint to resolve the 404
-            Route::post('/conversations/{id}/read', [ChatController::class, 'markAsRead']);
+        // 💰 --- PAYMENT & SUBSCRIPTION MANAGEMENT ---
+        Route::prefix('payments')->group(function () {
+            Route::get('/pending', [PaymentController::class, 'getPendingPayments']);
+            Route::get('/history', [PaymentController::class, 'getPaymentHistory']);
+            Route::post('/{id}/approve', [PaymentController::class, 'approvePayment']);
+            Route::post('/{id}/reject', [PaymentController::class, 'rejectPayment']);
+        });
+
+        // 🎁 --- REWARDS & MARKETPLACE MANAGEMENT ---
+        Route::prefix('rewards')->group(function () {
+            Route::get('/', [RewardController::class, 'index']);       // 👈 Admin Management
+            Route::post('/', [RewardController::class, 'store']);
+            Route::post('/{id}', [RewardController::class, 'update']); 
+            Route::delete('/{id}', [RewardController::class, 'destroy']);
+        });
+
+        // 🛒 Fulfillment logic (Purchases made by students)
+        Route::get('/redemptions', [GamificationController::class, 'getAllRedemptions']);
+        Route::post('/redemptions/{id}/fulfill', [GamificationController::class, 'fulfillRedemption']);
+
+        // 🎥 --- LIVE CLASSES & USER MANAGEMENT ---
+        Route::post('/live-classes', [LiveClassController::class, 'store']);
+        Route::get('/users', function() {
+            return response()->json(\App\Models\User::with('studentProfile')->get());
         });
     });
 });
 
-// Fallback for unauthorized access
+/*
+|--------------------------------------------------------------------------
+| 🚪 Fallback Unauthorized Route
+|--------------------------------------------------------------------------
+*/
 Route::get('/unauthorized', function () {
-    return response()->json(['message' => 'Unauthorized. Please login.'], 401);
+    return response()->json(['message' => 'Unauthorized.'], 401);
 })->name('login');

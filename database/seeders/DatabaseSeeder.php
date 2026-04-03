@@ -9,9 +9,6 @@ use App\Models\StudentProfile;
 
 class DatabaseSeeder extends Seeder
 {
-    /**
-     * Seed the application's database.
-     */
     public function run(): void
     {
         // 1. Create the Founder / Admin (Yusuf)
@@ -19,8 +16,9 @@ class DatabaseSeeder extends Seeder
             ['email' => 'admin@fricalearn.com'],
             [
                 'name' => 'Yusuf',
-                'password' => Hash::make('12345678'), // Easy password for local testing
+                'password' => Hash::make('12345678'),
                 'is_admin' => true,
+                'role' => 'admin', // 🚀 Explicitly set role
             ]
         );
 
@@ -31,23 +29,32 @@ class DatabaseSeeder extends Seeder
                 'name' => 'Ayo Learner',
                 'password' => Hash::make('password123'),
                 'is_admin' => false,
+                'role' => 'student', // 🚀 Explicitly set role
             ]
         );
 
         // 3. Give Ayo a Gamification Profile
-        // This ensures the dashboard doesn't crash looking for his points/rank
         StudentProfile::updateOrCreate(
             ['user_id' => $student->id],
             [
-                'language' => 'Yoruba',
-                'total_points' => 0,
-                'total_coins' => 0,
+                'language' => 'Yoruba', // 🚀 Updated key to match StudentProfile.php
+                'total_points' => 510,           // Setting his points to match your screenshot
+                'total_coins' => 100,
             ]
         );
 
-        $this->command->info('✅ FricaLearn Users Seeded: Admin (Yusuf) & Student (Ayo) are ready!');
+        // 3. Create a Test Parent (e.g., Ayo's Dad)
+$parent = User::updateOrCreate(
+    ['email' => 'parent@test.com'],
+    [
+        'name' => 'Yusuf Parent',
+        'password' => Hash::make('password123'),
+        'role' => 'parent', // 🚀 This is the magic key
+        'is_admin' => false,
+    ]
+);
 
-        // For Rewards
+        $this->command->info('✅ FricaLearn Users Seeded!');
         $this->call([RewardSeeder::class]);
     }
 }

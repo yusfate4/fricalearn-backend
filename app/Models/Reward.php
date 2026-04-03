@@ -9,14 +9,15 @@ class Reward extends Model
 {
     use HasFactory;
 
-    protected $fillable = [
-        'title',
-        'description',
-        'cost_coins',
-        'image_url',
-        'type',
-        'is_active',
-    ];
+  protected $fillable = [
+    'title', 
+    'description', 
+    'cost_coins', 
+    'type', 
+    'image_path', 
+    'file_path', 
+    'is_active'
+];
 
     public function redemptions()
     {

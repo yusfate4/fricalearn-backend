@@ -3,23 +3,25 @@
 namespace App\Services;
 
 use App\Models\LiveClass;
-use App\Models\ClassAttendance;
+use Illuminate\Support\Facades\Auth;
 
 class LiveClassService
 {
     /**
-     * Create a new scheduled live class.
+     * Create a new Live Class record.
+     * In Phase 2, this is where you'd call the Zoom/Meet API.
      */
-    public function createLiveClass(array $data): LiveClass
+    public function createLiveClass(array $data)
     {
         return LiveClass::create([
-            'lesson_id' => $data['lesson_id'],
-            'tutor_id' => $data['tutor_id'],
-            'title' => $data['title'],
-            'scheduled_at' => $data['scheduled_at'],
-            'duration_minutes' => $data['duration_minutes'],
-            'meeting_id' => 'frica_' . uniqid(), // Unique ID for the video room
-            'status' => 'scheduled',
+            'lesson_id'       => $data['lesson_id'],
+            'tutor_id'        => Auth::id(), // The logged-in Admin/Tutor
+            'title'           => $data['title'],
+            'scheduled_at'    => $data['scheduled_at'],
+            'duration_minutes'=> $data['duration_minutes'] ?? 45,
+            'meeting_url'     => $data['meeting_url'] ?? null,
+            'status'          => 'scheduled',
+            'max_attendees'   => $data['max_attendees'] ?? 20,
         ]);
     }
 }

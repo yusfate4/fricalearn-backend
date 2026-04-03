@@ -16,16 +16,24 @@ class LiveClassController extends Controller
         $this->liveClassService = $lcs;
     }
 
-    public function index(Request $request)
-    {
-        // List upcoming classes for the student's enrolled courses
-        $classes = LiveClass::with(['tutor', 'lesson'])
-            ->where('scheduled_at', '>', now())
-            ->orderBy('scheduled_at', 'asc')
-            ->get();
+ public function index(Request $request)
+{
+    // 🚀 FIX: Show classes starting in the future OR that started in the last 2 hours
+    $classes = LiveClass::with(['tutor', 'lesson'])
+        ->where('scheduled_at', '>', now()->subHours(2)) 
+        ->orderBy('scheduled_at', 'asc')
+        ->get();
 
-        return response()->json($classes);
-    }
+    return response()->json($classes);
+}
+
+public function show($id)
+{
+    // Fetch the class with tutor and lesson details
+    $liveClass = LiveClass::with(['tutor', 'lesson'])->findOrFail($id);
+
+    return response()->json($liveClass);
+}
 
     public function store(Request $request)
     {
@@ -37,4 +45,12 @@ class LiveClassController extends Controller
         $class = $this->liveClassService->createLiveClass($request->all());
         return response()->json($class, 201);
     }
+
+    public function destroy($id)
+{
+    $liveClass = LiveClass::findOrFail($id);
+    $liveClass->delete();
+
+    return response()->json(['message' => 'Class deleted successfully']);
+}
 }
