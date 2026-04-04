@@ -5,7 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Reward;
 use Illuminate\Http\Request;
-// 🚀 Pure Cloudinary SDK for manual injection
+// 🚀 Use the pure Cloudinary SDK for manual injection
 use Cloudinary\Cloudinary;
 
 class RewardController extends Controller
@@ -15,7 +15,6 @@ class RewardController extends Controller
      */
     public function index()
     {
-        // We use latest() so new items appear at the top of Dahud's dashboard
         return response()->json(Reward::latest()->get());
     }
 
@@ -29,67 +28,72 @@ class RewardController extends Controller
             return response()->json(['message' => 'Admin only.'], 403);
         }
 
-        // 🛠️ DATA MAPPING: Translate React names to Laravel names
-        // React sends 'cost_coins', Laravel wants 'points_required'
-        if ($request->has('cost_coins')) {
-            $request->merge(['points_required' => $request->cost_coins]);
-        }
-        // React sends 'type', Laravel wants 'category'
-        if ($request->has('type')) {
-            $request->merge(['category' => $request->type]);
-        }
-        // React doesn't have a 'stock' field in the form yet, so we default to 999
-        if (!$request->has('stock')) {
-            $request->merge(['stock' => 999]);
-        }
-
-        // 🛡️ Validation
+        // 🛡️ Validation: Matching your React form data
         $validated = $request->validate([
             'title' => 'required|string|max:255',
             'description' => 'required|string',
-            'points_required' => 'required|integer|min:1',
-            'stock' => 'required|integer|min:0',
-            'category' => 'required|string',
-            'image' => 'nullable|image|max:5120', 
+            'cost_coins' => 'required|integer|min:1',
+            'type' => 'required|string',
+            'image' => 'nullable|image|max:5120', // Thumbnail
+            'product_file' => 'nullable|file|mimes:pdf|max:10240', // Digital Asset PDF
         ]);
 
-        $imageUrl = null;
+        $imagePath = null;
+        $filePath = null;
 
-        // Handle Image Upload to Cloudinary
-        if ($request->hasFile('image')) {
-            $cloudinary = new Cloudinary([
-                'cloud' => [
-                    'cloud_name' => env('CLOUDINARY_CLOUD_NAME'),
-                    'api_key'    => env('CLOUDINARY_API_KEY'),
-                    'api_secret' => env('CLOUDINARY_API_SECRET'),
-                ],
+        // ☁️ Initialize Cloudinary once
+        $cloudinary = new Cloudinary([
+            'cloud' => [
+                'cloud_name' => env('CLOUDINARY_CLOUD_NAME'),
+                'api_key'    => env('CLOUDINARY_API_KEY'),
+                'api_secret' => env('CLOUDINARY_API_SECRET'),
+            ],
+        ]);
+
+        try {
+            // 1. Handle Thumbnail Image
+            if ($request->hasFile('image')) {
+                $uploadImage = $cloudinary->uploadApi()->upload(
+                    $request->file('image')->getRealPath(),
+                    ['folder' => 'fricalearn/rewards/thumbnails']
+                );
+                $imagePath = $uploadImage['secure_url'];
+            }
+
+            // 2. Handle Digital Product File (PDF)
+            if ($request->hasFile('product_file')) {
+                $uploadFile = $cloudinary->uploadApi()->upload(
+                    $request->file('product_file')->getRealPath(),
+                    [
+                        'folder' => 'fricalearn/rewards/products',
+                        'resource_type' => 'auto'
+                    ]
+                );
+                $filePath = $uploadFile['secure_url'];
+            }
+
+            // 🚀 DATABASE INSERT: Using your exact Model $fillable names
+            $reward = Reward::create([
+                'title' => $validated['title'],
+                'description' => $validated['description'],
+                'cost_coins' => $validated['cost_coins'],
+                'type' => $validated['type'],
+                'image_path' => $imagePath, // Matches Model
+                'file_path' => $filePath,   // Matches Model
+                'is_active' => true,
             ]);
 
-            try {
-                $upload = $cloudinary->uploadApi()->upload(
-                    $request->file('image')->getRealPath(),
-                    ['folder' => 'fricalearn/rewards']
-                );
-                $imageUrl = $upload['secure_url'];
-            } catch (\Exception $e) {
-                return response()->json(['error' => 'Image upload failed', 'details' => $e->getMessage()], 500);
-            }
+            return response()->json([
+                'message' => 'Item added to Marketplace!',
+                'reward' => $reward
+            ], 201);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'error' => 'Upload or Save Failed', 
+                'details' => $e->getMessage()
+            ], 500);
         }
-
-        $reward = Reward::create([
-            'title' => $validated['title'],
-            'description' => $validated['description'],
-            'points_required' => $validated['points_required'],
-            'stock' => $validated['stock'],
-            'category' => $validated['category'],
-            'image_url' => $imageUrl,
-            'is_active' => true,
-        ]);
-
-        return response()->json([
-            'message' => 'Item added to Marketplace!',
-            'reward' => $reward
-        ], 201);
     }
 
     /**
@@ -98,21 +102,13 @@ class RewardController extends Controller
     public function update(Request $request, $id)
     {
         $reward = Reward::findOrFail($id);
-
-        // Map names for update too
-        if ($request->has('cost_coins')) {
-            $request->merge(['points_required' => $request->cost_coins]);
-        }
-        if ($request->has('type')) {
-            $request->merge(['category' => $request->type]);
-        }
         
         $validated = $request->validate([
             'title' => 'sometimes|string|max:255',
             'description' => 'sometimes|string',
-            'points_required' => 'sometimes|integer|min:1',
-            'stock' => 'sometimes|integer|min:0',
-            'category' => 'sometimes|string',
+            'cost_coins' => 'sometimes|integer|min:1',
+            'type' => 'sometimes|string',
+            'is_active' => 'sometimes|boolean'
         ]);
 
         $reward->update($validated);
