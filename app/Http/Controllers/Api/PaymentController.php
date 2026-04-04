@@ -11,11 +11,14 @@ use App\Models\Course;
 use App\Models\User;
 use App\Models\StudentProfile;
 use Illuminate\Support\Facades\DB;
+// 🚀 Use the pure Cloudinary SDK for manual injection
+use Cloudinary\Cloudinary;
 
 class PaymentController extends Controller
 {
     /**
      * 💳 Parent: Submit payment and auto-initialize student account
+     * Maps to: /api/parent/submit-payment AND /api/parent/payments/submit
      */
     public function submitPayment(Request $request)
     {
@@ -24,12 +27,21 @@ class PaymentController extends Controller
             'course_id'  => 'required|exists:courses,id',
             'amount'     => 'required|numeric',
             'currency'   => 'required|string',
-            'receipt'    => 'required|image|max:5120',
+            'receipt'    => 'required|image|max:5120', // 5MB Max
         ]);
 
         $parent = $request->user();
 
-        return DB::transaction(function () use ($validated, $parent, $request) {
+        // ☁️ Initialize Cloudinary Manual Instance
+        $cloudinary = new Cloudinary([
+            'cloud' => [
+                'cloud_name' => env('CLOUDINARY_CLOUD_NAME'),
+                'api_key'    => env('CLOUDINARY_API_KEY'),
+                'api_secret' => env('CLOUDINARY_API_SECRET'),
+            ],
+        ]);
+
+        return DB::transaction(function () use ($validated, $parent, $request, $cloudinary) {
             
             // 🚀 STEP 1: AUTO-INITIALIZE STUDENT
             $student = User::firstOrCreate(
@@ -45,10 +57,18 @@ class PaymentController extends Controller
                 ]
             );
 
-            // 🚀 STEP 2: SAVE RECEIPT
-            $path = $request->file('receipt')->store('receipts', 'public');
+            // 🚀 STEP 2: UPLOAD RECEIPT TO CLOUDINARY
+            try {
+                $upload = $cloudinary->uploadApi()->upload(
+                    $request->file('receipt')->getRealPath(),
+                    ['folder' => 'fricalearn/payments/receipts']
+                );
+                $receiptUrl = $upload['secure_url'];
+            } catch (\Exception $e) {
+                throw new \Exception("Receipt upload failed: " . $e->getMessage());
+            }
 
-            // 🚀 STEP 3: CREATE PAYMENT
+            // 🚀 STEP 3: CREATE PAYMENT RECORD
             $payment = EnrollmentPayment::create([
                 'parent_id'    => $parent->id,
                 'user_id'      => $student->id, 
@@ -56,14 +76,14 @@ class PaymentController extends Controller
                 'child_name'   => trim($validated['child_name']),
                 'amount'       => $validated['amount'],
                 'currency'     => $validated['currency'],
-                'receipt_path' => $path,
+                'receipt_path' => $receiptUrl, // Now storing the Cloudinary URL
                 'status'       => 'pending',
             ]);
 
             return response()->json([
                 'message' => 'Receipt submitted! Account for ' . $student->name . ' is awaiting verification.',
                 'payment_id' => $payment->id
-            ]);
+            ], 201);
         });
     }
 
@@ -83,12 +103,10 @@ class PaymentController extends Controller
                 return response()->json(['message' => 'Already approved.'], 400);
             }
 
-            // 1. FIND OR CREATE THE STUDENT
+            // 1. FIND THE STUDENT (Ensure student exists or recreate if deleted)
             $student = User::where('role', 'student')
-                ->where(function($query) use ($payment) {
-                    $query->where('id', $payment->user_id)
-                          ->orWhere('name', 'LIKE', trim($payment->child_name));
-                })->first();
+                ->where('id', $payment->user_id)
+                ->first();
 
             if (!$student) {
                 $student = User::create([
@@ -101,10 +119,12 @@ class PaymentController extends Controller
             }
 
             // 2. SYNC RELATIONSHIPS
-            $student->update(['parent_id' => $payment->parent_id]);
             $parent = User::find($payment->parent_id);
             if ($parent) {
-                $parent->children()->syncWithoutDetaching([$student->id => ['relationship' => 'Parent']]);
+                // If using a many-to-many child pivot
+                if (method_exists($parent, 'children')) {
+                    $parent->children()->syncWithoutDetaching([$student->id => ['relationship' => 'Parent']]);
+                }
             }
 
             // 3. UPDATE PAYMENT STATUS
@@ -112,7 +132,6 @@ class PaymentController extends Controller
                 'user_id' => $student->id,
                 'status' => 'approved',
                 'approved_at' => now(),
-                'expires_at' => now()->addDays(365), // 🚀 Set to 1 year
             ]);
 
             // 4. ACTIVATE COURSE ENROLLMENT
@@ -121,19 +140,18 @@ class PaymentController extends Controller
                 [
                     'status' => 'active', 
                     'enrolled_at' => now(), 
-                    'expires_at' => now()->addDays(365) // 🚀 Set to 1 year
+                    'expires_at' => now()->addDays(365) 
                 ]
             );
 
             // 🚀 5. UPDATE STUDENT PROFILE TRACK
-            // This ensures the dashboard badge shows the right course, not "Yoruba"
             $course = Course::find($payment->course_id);
-            $trackName = $course ? ($course->subject ?? $course->title) : 'Yoruba'; 
+            $trackName = $course ? ($course->subject ?? $course->title) : 'General'; 
 
             StudentProfile::updateOrCreate(
                 ['user_id' => $student->id],
                 [
-                    'learning_language' => $trackName, // 👈 Dynamically set from the course
+                    'learning_language' => $trackName,
                     'rank' => 'Akeko',
                     'total_points' => 0,
                     'total_coins' => 0
@@ -176,12 +194,7 @@ class PaymentController extends Controller
     public function rejectPayment($id)
     {
         $payment = EnrollmentPayment::findOrFail($id);
-        
-        if ($payment->receipt_path) {
-            $cleanPath = str_replace(['/storage/', 'storage/'], '', $payment->receipt_path);
-            Storage::disk('public')->delete($cleanPath);
-        }
-
+        // Note: We don't delete Cloudinary assets here automatically to keep a record of why it was rejected
         $payment->update(['status' => 'rejected']);
         return response()->json(['message' => 'Payment rejected.']);
     }
