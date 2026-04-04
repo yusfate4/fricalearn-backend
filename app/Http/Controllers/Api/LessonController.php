@@ -160,63 +160,68 @@ class LessonController extends Controller
      * 🏗️ UPLOAD LESSON CONTENT (Cloudinary Fixed Method)
      */
     public function uploadContent(Request $request, $id)
-    {
-        $isAdmin = auth()->user()->role === 'admin' || Number(auth()->user()->is_admin) === 1;
-        if (!$isAdmin) {
-            return response()->json(['message' => 'Admin only.'], 403);
-        }
-
-        $lesson = Lesson::findOrFail($id);
-        
-        $validated = $request->validate([
-            'file' => 'required|file|max:102400', // 100MB Limit
-            'content_type' => 'required|in:video,document,audio,image',
-        ]);
-
-        // 🚀 Manual SDK Setup to bypass the "null" ServiceProvider error
-        $cloudinary = new Cloudinary([
-            'cloud' => [
-                'cloud_name' => env('CLOUDINARY_CLOUD_NAME'),
-                'api_key'    => env('CLOUDINARY_API_KEY'),
-                'api_secret' => env('CLOUDINARY_API_SECRET'),
-            ],
-        ]);
-
-        try {
-            $file = $request->file('file');
-            
-            // Set resource_type based on the content being uploaded
-            $resourceType = ($validated['content_type'] === 'video' || $validated['content_type'] === 'audio') 
-                ? 'video' 
-                : 'auto';
-
-            $upload = $cloudinary->uploadApi()->upload(
-                $file->getRealPath(),
-                [
-                    'folder' => 'fricalearn/lessons',
-                    'resource_type' => $resourceType
-                ]
-            );
-
-            $content = LessonContent::create([
-                'lesson_id' => $lesson->id,
-                'content_type' => $validated['content_type'],
-                'file_url' => $upload['secure_url'],
-            ]);
-
-            return response()->json([
-                'message' => 'Material uploaded successfully!',
-                'url' => $upload['secure_url'],
-                'data' => $content
-            ], 201);
-
-        } catch (\Exception $e) {
-            return response()->json([
-                'error' => 'Cloudinary Upload Failed', 
-                'details' => $e->getMessage()
-            ], 500);
-        }
+{
+    $isAdmin = auth()->user()->role === 'admin' || Number(auth()->user()->is_admin) === 1;
+    if (!$isAdmin) {
+        return response()->json(['message' => 'Admin only.'], 403);
     }
+
+    $lesson = Lesson::findOrFail($id);
+    
+    $validated = $request->validate([
+        'file' => 'required|file|max:102400', 
+        'content_type' => 'required|in:video,document,audio,image',
+    ]);
+
+    $cloudinary = new Cloudinary([
+        'cloud' => [
+            'cloud_name' => env('CLOUDINARY_CLOUD_NAME'),
+            'api_key'    => env('CLOUDINARY_API_KEY'),
+            'api_secret' => env('CLOUDINARY_API_SECRET'),
+        ],
+    ]);
+
+    try {
+        $file = $request->file('file');
+        
+        // 🚀 THE FIX: Precise resource types
+        // Images = 'image'
+        // Videos/Audio = 'video'
+        // PDFs/Docs = 'raw'
+        $resourceType = 'auto';
+        if ($validated['content_type'] === 'video' || $validated['content_type'] === 'audio') {
+            $resourceType = 'video';
+        } elseif ($validated['content_type'] === 'document') {
+            $resourceType = 'raw'; 
+        } else {
+            $resourceType = 'image';
+        }
+
+        $upload = $cloudinary->uploadApi()->upload(
+            $file->getRealPath(),
+            [
+                'folder' => 'fricalearn/lessons',
+                'resource_type' => $resourceType,
+                'access_mode' => 'public', // Force public access
+            ]
+        );
+
+        $content = LessonContent::create([
+            'lesson_id' => $lesson->id,
+            'content_type' => $validated['content_type'],
+            'file_url' => $upload['secure_url'],
+        ]);
+
+        return response()->json([
+            'message' => 'Material uploaded successfully!',
+            'url' => $upload['secure_url'],
+            'data' => $content
+        ], 201);
+
+    } catch (\Exception $e) {
+        return response()->json(['error' => $e->getMessage()], 500);
+    }
+}
 
     public function update(Request $request, $id)
     {
