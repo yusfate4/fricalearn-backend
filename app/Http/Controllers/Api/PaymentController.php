@@ -11,7 +11,7 @@ use App\Models\Course;
 use App\Models\User;
 use App\Models\StudentProfile;
 use Illuminate\Support\Facades\DB;
-// 🚀 Cloudinary SDK
+// 🚀 Cloudinary SDK for secure media uploads
 use Cloudinary\Cloudinary;
 
 class PaymentController extends Controller
@@ -41,7 +41,11 @@ class PaymentController extends Controller
 
         return DB::transaction(function () use ($validated, $parent, $request, $cloudinary) {
             
-            // 1. Initialize Student with parent_id
+            /**
+             * 🚀 THE FIX: Link parent_id immediately. 
+             * We use 'name' and 'parent_id' to find the student, 
+             * ensuring we don't accidentally link to someone else's child with the same name.
+             */
             $student = User::firstOrCreate(
                 [
                     'name' => trim($validated['child_name']), 
@@ -55,7 +59,7 @@ class PaymentController extends Controller
                 ]
             );
 
-            // 2. Upload to Cloudinary
+            // ☁️ Upload to Cloudinary
             try {
                 $upload = $cloudinary->uploadApi()->upload(
                     $request->file('receipt')->getRealPath(),
@@ -66,7 +70,7 @@ class PaymentController extends Controller
                 throw new \Exception("Receipt upload failed: " . $e->getMessage());
             }
 
-            // 3. Create Payment Record
+            // 📄 Create Payment Record
             $payment = EnrollmentPayment::create([
                 'parent_id'    => $parent->id,
                 'user_id'      => $student->id, 
@@ -79,7 +83,7 @@ class PaymentController extends Controller
             ]);
 
             return response()->json([
-                'message' => 'Receipt submitted successfully!',
+                'message' => 'Receipt submitted successfully! Admin will verify soon.',
                 'payment_id' => $payment->id
             ], 201);
         });
@@ -101,12 +105,14 @@ class PaymentController extends Controller
                 return response()->json(['message' => 'Already approved.'], 400);
             }
 
-            // Fix relationship
+            // 1. Locate student and FORCE the parent_id link
             $student = User::where('role', 'student')->where('id', $payment->user_id)->first();
 
             if ($student) {
+                // Ensure the parent_id is synced here just in case it was NULL
                 $student->update(['parent_id' => $payment->parent_id]);
             } else {
+                // Fallback: Create student if record was missing
                 $student = User::create([
                     'name' => trim($payment->child_name),
                     'email' => strtolower(str_replace(' ', '', $payment->child_name)) . '_' . rand(100, 999) . '@fricalearn.com',
@@ -116,12 +122,20 @@ class PaymentController extends Controller
                 ]);
             }
 
+            // 2. Sync Pivot Table (Optional depending on your model)
+            $parent = User::find($payment->parent_id);
+            if ($parent && method_exists($parent, 'children')) {
+                $parent->children()->syncWithoutDetaching([$student->id => ['relationship' => 'Parent']]);
+            }
+
+            // 3. Update Payment Status
             $payment->update([
                 'user_id' => $student->id,
                 'status' => 'approved',
                 'approved_at' => now(),
             ]);
 
+            // 4. Activate Course Enrollment
             CourseEnrollment::updateOrCreate(
                 ['course_id' => $payment->course_id, 'student_id' => $student->id],
                 [
@@ -131,6 +145,7 @@ class PaymentController extends Controller
                 ]
             );
 
+            // 5. Setup Student Profile & Track
             $course = Course::find($payment->course_id);
             $trackName = $course ? ($course->subject ?? $course->title) : 'General'; 
 
@@ -144,7 +159,7 @@ class PaymentController extends Controller
                 ]
             );
 
-            return response()->json(['message' => "Success! Student is now active."]);
+            return response()->json(['message' => "Success! Student linked to parent and activated."]);
         });
     }
 
@@ -176,7 +191,7 @@ class PaymentController extends Controller
         $payments = EnrollmentPayment::with(['parent:id,name', 'course:id,title'])
             ->whereIn('status', ['approved', 'rejected'])
             ->latest()
-            ->get(); // ✅ FIXED: Added missing semicolon and '->get()' here
+            ->get();
 
         $payments->transform(function($payment) {
             if ($payment->receipt_path && !str_starts_with($payment->receipt_path, 'http')) {
