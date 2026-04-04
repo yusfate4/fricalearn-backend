@@ -8,8 +8,8 @@ use App\Models\CourseEnrollment;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\DB;
-// ☁️ Import Cloudinary Lab
-use CloudinaryLabs\CloudinaryLaravel\Facades\Cloudinary;
+use Cloudinary\Cloudinary; 
+
 
 class CourseController extends Controller
 {
@@ -133,7 +133,7 @@ class CourseController extends Controller
     ]);
 
     // 🚀 MANUAL INJECTION: Bypass the Service Provider
-    $cloudinary = new Cloudinary([
+   $cloudinary = new Cloudinary([
         'cloud' => [
             'cloud_name' => env('CLOUDINARY_CLOUD_NAME'),
             'api_key'    => env('CLOUDINARY_API_KEY'),
@@ -142,6 +142,7 @@ class CourseController extends Controller
     ]);
 
     try {
+        // ✅ Notice we call it on the $cloudinary variable we just created
         $upload = $cloudinary->uploadApi()->upload(
             $request->file('image')->getRealPath(),
             ['folder' => 'fricalearn/courses']
@@ -157,7 +158,7 @@ class CourseController extends Controller
 
         return response()->json($course, 201);
     } catch (\Exception $e) {
-        return response()->json(['error' => 'Cloudinary Manual Upload Failed', 'details' => $e->getMessage()], 500);
+        return response()->json(['error' => $e->getMessage()], 500);
     }
 }
 
