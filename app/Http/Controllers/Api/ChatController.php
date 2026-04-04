@@ -7,6 +7,9 @@ use App\Models\Conversation;
 use App\Models\Message;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\DB;
+// 🚀 Use the pure Cloudinary SDK for manual injection
+use Cloudinary\Cloudinary;
 
 class ChatController extends Controller
 {
@@ -42,7 +45,6 @@ class ChatController extends Controller
 
     /**
      * 📩 Send a new message
-     * Supports both 'conversation_id' or 'receiver_id' to prevent 422 errors
      */
     public function sendMessage(Request $request)
     {
@@ -50,7 +52,7 @@ class ChatController extends Controller
         
         $request->validate([
             'conversation_id' => 'nullable|exists:conversations,id',
-            'receiver_id'     => 'nullable|exists:users,id', // 🚀 Fallback for simpler frontend logic
+            'receiver_id'     => 'nullable|exists:users,id', 
             'message'         => 'required_without_all:image,audio|string|nullable',
             'image'           => 'nullable|image|max:5120',
             'audio'           => 'nullable|file|max:10240',
@@ -62,39 +64,69 @@ class ChatController extends Controller
         } else {
             // If no convo_id, find/create one using the receiver_id
             $conversation = Conversation::firstOrCreate([
-                'student_id' => $user->role === 'admin' ? $request->receiver_id : $user->id,
-                'tutor_id'   => $user->role === 'admin' ? $user->id : ($request->receiver_id ?? 1),
+                'student_id' => ($user->role === 'admin' || $user->is_admin == 1) ? $request->receiver_id : $user->id,
+                'tutor_id'   => ($user->role === 'admin' || $user->is_admin == 1) ? $user->id : ($request->receiver_id ?? 1),
             ]);
         }
         
-        // 2. Security Check
-        if ($conversation->student_id != $user->id && $conversation->tutor_id != $user->id) {
+        // 2. 🛡️ THE FIX: Admin/Tutor Bypass
+        // Allow access if the user is a participant OR is an Admin
+        $isAdmin = ($user->role === 'admin' || $user->is_admin == 1);
+        $isParticipant = ($conversation->student_id == $user->id || $conversation->tutor_id == $user->id);
+
+        if (!$isParticipant && !$isAdmin) {
             return response()->json(['message' => 'Unauthorized chat access'], 403);
         }
 
-        // 3. Handle Media (Clean paths)
-        $imagePath = $request->hasFile('image') 
-            ? $request->file('image')->store('chat_media', 'public') 
-            : null;
+        // 3. ☁️ Handle Media with Cloudinary Manual SDK
+        $imagePath = null;
+        $audioPath = null;
 
-        $audioPath = $request->hasFile('audio') 
-            ? $request->file('audio')->store('chat_audio', 'public') 
-            : null;
-
-        // 4. Save Message
-        $message = Message::create([
-            'conversation_id' => $conversation->id,
-            'sender_id'       => $user->id,
-            'message'         => $request->message ?? '',
-            'image_path'      => $imagePath,
-            'audio_path'      => $audioPath,
-            'is_read'         => false,
+        $cloudinary = new Cloudinary([
+            'cloud' => [
+                'cloud_name' => env('CLOUDINARY_CLOUD_NAME'),
+                'api_key'    => env('CLOUDINARY_API_KEY'),
+                'api_secret' => env('CLOUDINARY_API_SECRET'),
+            ],
         ]);
 
-        // Bump conversation to top of list
-        $conversation->touch();
+        try {
+            if ($request->hasFile('image')) {
+                $upload = $cloudinary->uploadApi()->upload(
+                    $request->file('image')->getRealPath(),
+                    ['folder' => 'fricalearn/chat/images']
+                );
+                $imagePath = $upload['secure_url'];
+            }
 
-        return response()->json($message->load('sender'), 201);
+            if ($request->hasFile('audio')) {
+                $upload = $cloudinary->uploadApi()->upload(
+                    $request->file('audio')->getRealPath(),
+                    [
+                        'folder' => 'fricalearn/chat/audio',
+                        'resource_type' => 'video' // Cloudinary requires 'video' for audio files
+                    ]
+                );
+                $audioPath = $upload['secure_url'];
+            }
+
+            // 4. Save Message
+            $message = Message::create([
+                'conversation_id' => $conversation->id,
+                'sender_id'       => $user->id,
+                'message'         => $request->message ?? '',
+                'image_path'      => $imagePath, // Now storing Cloudinary URL
+                'audio_path'      => $audioPath, // Now storing Cloudinary URL
+                'is_read'         => false,
+            ]);
+
+            $conversation->touch();
+
+            return response()->json($message->load('sender'), 201);
+
+        } catch (\Exception $e) {
+            return response()->json(['error' => 'Upload failed', 'details' => $e->getMessage()], 500);
+        }
     }
 
     /**
@@ -123,9 +155,6 @@ class ChatController extends Controller
     /**
      * 👑 ADMIN: Messages for one student
      */
-  /**
-     * 👑 ADMIN: Messages for one student
-     */
     public function getAdminMessages($id)
     {
         $messages = Message::where('conversation_id', $id)
@@ -133,7 +162,6 @@ class ChatController extends Controller
             ->orderBy('created_at', 'asc')
             ->get();
 
-        // ✅ This internal call now works because we fixed the signature in the last step
         $this->markAsRead($id);
 
         return response()->json($messages);
@@ -142,21 +170,13 @@ class ChatController extends Controller
     /**
      * ✅ Mark as Read Logic
      */
- /**
-     * ✅ Mark as Read Logic
-     * Works both as an API route and an internal method call.
-     */
     public function markAsRead($id)
     {
-        // 📩 Logic: Update all messages in this conversation where 'is_read' is false
-        // We target messages NOT sent by the current user (the admin)
         $updated = Message::where('conversation_id', $id)
             ->where('is_read', false)
             ->where('sender_id', '!=', auth()->id())
             ->update(['is_read' => true]);
 
-        // If called as an API route, return JSON. 
-        // If called internally by getAdminMessages, just return the count.
         if (request()->wantsJson() || request()->ajax()) {
             return response()->json([
                 'status' => 'success',
