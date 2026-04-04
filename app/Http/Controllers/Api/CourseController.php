@@ -119,32 +119,47 @@ class CourseController extends Controller
     /**
      * 🔐 Admin: Store (Cloudinary Integrated)
      */
-    public function store(Request $request)
-    {
-        $validated = $request->validate([
-            'title' => 'required|string|max:255|unique:courses',
-            'category' => 'required|string', 
-            'subject' => 'required|string',
-            'level' => 'required|string',
-            'description' => 'required|string',
-            'price_ngn' => 'required|numeric',
-            'price_gbp' => 'required|numeric',
-            'image' => 'required|image|max:5120', 
-        ]);
+   public function store(Request $request)
+{
+    $validated = $request->validate([
+        'title' => 'required|string|max:255|unique:courses',
+        'category' => 'required|string', 
+        'subject' => 'required|string',
+        'level' => 'required|string',
+        'description' => 'required|string',
+        'price_ngn' => 'required|numeric',
+        'price_gbp' => 'required|numeric',
+        'image' => 'required|image|max:5120', 
+    ]);
 
-        // ☁️ Upload to Cloudinary folder 'fricalearn/courses'
-        $uploadedFileUrl = Cloudinary::upload($request->file('image')->getRealPath(), [
-            'folder' => 'fricalearn/courses'
-        ])->getSecurePath();
+    // 🚀 MANUAL INJECTION: Bypass the Service Provider
+    $cloudinary = new Cloudinary([
+        'cloud' => [
+            'cloud_name' => env('CLOUDINARY_CLOUD_NAME'),
+            'api_key'    => env('CLOUDINARY_API_KEY'),
+            'api_secret' => env('CLOUDINARY_API_SECRET'),
+        ],
+    ]);
+
+    try {
+        $upload = $cloudinary->uploadApi()->upload(
+            $request->file('image')->getRealPath(),
+            ['folder' => 'fricalearn/courses']
+        );
+        
+        $uploadedFileUrl = $upload['secure_url'];
 
         $course = Course::create(array_merge($validated, [
-            'thumbnail_url' => $uploadedFileUrl, // Store the full HTTPS link
+            'thumbnail_url' => $uploadedFileUrl,
             'created_by' => auth()->id(),
             'is_published' => true,
         ]));
 
         return response()->json($course, 201);
+    } catch (\Exception $e) {
+        return response()->json(['error' => 'Cloudinary Manual Upload Failed', 'details' => $e->getMessage()], 500);
     }
+}
 
     /**
      * 📝 Admin: Update (Cloudinary Integrated)
