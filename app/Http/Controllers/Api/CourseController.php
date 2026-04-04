@@ -8,6 +8,8 @@ use App\Models\CourseEnrollment;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\DB;
+// ☁️ Import Cloudinary Lab
+use CloudinaryLabs\CloudinaryLaravel\Facades\Cloudinary;
 
 class CourseController extends Controller
 {
@@ -15,55 +17,52 @@ class CourseController extends Controller
      * 🎓 Smart Library Index
      * Handles: /api/courses
      */
-  public function index(Request $request)
-{
-    try {
-        $user = $request->user();
-        
-        // 🕵️ Get ID from Header or Query Param (SelectCourses uses Header)
-        $activeStudentId = $request->header('X-Active-Student-Id') ?: $request->query('student_id');
+    public function index(Request $request)
+    {
+        try {
+            $user = $request->user();
+            
+            // 🕵️ Get ID from Header or Query Param
+            $activeStudentId = $request->header('X-Active-Student-Id') ?: $request->query('student_id');
 
-        // 👑 1. ADMIN: See everything
-        if ($user && ($user->role === 'admin' || $user->is_admin == 1)) {
-            return response()->json(Course::withCount(['modules'])->latest()->get());
+            // 👑 1. ADMIN: See everything
+            if ($user && ($user->role === 'admin' || $user->is_admin == 1)) {
+                return response()->json(Course::withCount(['modules'])->latest()->get());
+            }
+
+            /**
+             * 🛒 2. PARENT SHOPPING / GENERAL VIEW
+             */
+            if (!$activeStudentId || ($user && $user->role === 'parent' && empty($activeStudentId))) {
+                $catalog = Course::where('is_published', true)
+                    ->withCount(['modules'])
+                    ->latest()
+                    ->get();
+                    
+                return response()->json($catalog);
+            }
+
+            // 🛡️ 3. STUDENT / CLASSROOM VIEW: Only show PAID/ACTIVE courses
+            $enrolledCourseIds = CourseEnrollment::where('student_id', $activeStudentId)
+                ->where('status', 'active')
+                ->where('expires_at', '>', now())
+                ->pluck('course_id');
+
+            return response()->json(
+                Course::whereIn('id', $enrolledCourseIds)
+                    ->where('is_published', true)
+                    ->withCount(['modules'])
+                    ->latest()
+                    ->get()
+            );
+            
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 500);
         }
-
-        /**
-         * 🛒 2. PARENT SHOPPING / GENERAL VIEW:
-         * Triggered if: 
-         * - Role is parent AND no active student context is provided.
-         * - OR Header 'X-Active-Student-Id' is explicitly sent as empty (like in your React code).
-         */
-        if (!$activeStudentId || ($user && $user->role === 'parent' && empty($activeStudentId))) {
-            $catalog = Course::where('is_published', true)
-                ->withCount(['modules'])
-                ->latest()
-                ->get();
-                
-            return response()->json($catalog);
-        }
-
-        // 🛡️ 3. STUDENT / CLASSROOM VIEW: Only show PAID/ACTIVE courses
-        $enrolledCourseIds = \App\Models\CourseEnrollment::where('student_id', $activeStudentId)
-            ->where('status', 'active')
-            ->where('expires_at', '>', now())
-            ->pluck('course_id');
-
-        return response()->json(
-            Course::whereIn('id', $enrolledCourseIds)
-                ->where('is_published', true)
-                ->withCount(['modules'])
-                ->latest()
-                ->get()
-        );
-        
-    } catch (\Exception $e) {
-        return response()->json(['error' => $e->getMessage()], 500);
     }
-}
+
     /**
      * 👨‍👩‍👧‍👦 Parent: Fetch courses for browsing or impersonation
-     * Handles: /api/parent/courses
      */
     public function getParentCourses(Request $request)
     {
@@ -92,37 +91,33 @@ class CourseController extends Controller
 
     /**
      * 📖 Show a specific course
-     * ✅ ONLY ONE VERSION OF THIS ALLOWED
      */
- public function show($id)
-{
-    try {
-        // 🚀 THE FIX: We use 'order_index' instead of 'order' 
-        // to match your specific database column name.
-        $course = Course::with([
-            'modules' => function($query) use ($id) {
-                $query->where('course_id', $id)->orderBy('order_index', 'asc');
-            },
-            'modules.lessons'
-        ])->find($id);
+    public function show($id)
+    {
+        try {
+            $course = Course::with([
+                'modules' => function($query) {
+                    $query->orderBy('order_index', 'asc');
+                },
+                'modules.lessons'
+            ])->find($id);
 
-        if (!$course) {
-            return response()->json(['message' => 'Course not found'], 404);
+            if (!$course) {
+                return response()->json(['message' => 'Course not found'], 404);
+            }
+
+            return response()->json($course);
+            
+        } catch (\Exception $e) {
+            return response()->json([
+                'error' => 'Database Query Error',
+                'message' => $e->getMessage()
+            ], 500);
         }
-
-        return response()->json($course);
-        
-    } catch (\Exception $e) {
-        // 🕵️ This will help you catch any other hidden SQL errors
-        return response()->json([
-            'error' => 'Database Query Error',
-            'message' => $e->getMessage()
-        ], 500);
     }
-}
 
     /**
-     * 🔐 Admin: Store
+     * 🔐 Admin: Store (Cloudinary Integrated)
      */
     public function store(Request $request)
     {
@@ -137,10 +132,13 @@ class CourseController extends Controller
             'image' => 'required|image|max:5120', 
         ]);
 
-        $imagePath = $request->hasFile('image') ? $request->file('image')->store('courses', 'public') : null;
+        // ☁️ Upload to Cloudinary folder 'fricalearn/courses'
+        $uploadedFileUrl = Cloudinary::upload($request->file('image')->getRealPath(), [
+            'folder' => 'fricalearn/courses'
+        ])->getSecurePath();
 
         $course = Course::create(array_merge($validated, [
-            'thumbnail_url' => $imagePath,
+            'thumbnail_url' => $uploadedFileUrl, // Store the full HTTPS link
             'created_by' => auth()->id(),
             'is_published' => true,
         ]));
@@ -149,7 +147,7 @@ class CourseController extends Controller
     }
 
     /**
-     * 📝 Admin: Update
+     * 📝 Admin: Update (Cloudinary Integrated)
      */
     public function update(Request $request, $id)
     {
@@ -157,8 +155,13 @@ class CourseController extends Controller
         $data = $request->except('image');
 
         if ($request->hasFile('image')) {
-            if ($course->thumbnail_url) Storage::disk('public')->delete($course->thumbnail_url);
-            $data['thumbnail_url'] = $request->file('image')->store('courses', 'public');
+            // Note: Cloudinary management usually handles replacement, 
+            // but we store the new secure path here.
+            $uploadedFileUrl = Cloudinary::upload($request->file('image')->getRealPath(), [
+                'folder' => 'fricalearn/courses'
+            ])->getSecurePath();
+            
+            $data['thumbnail_url'] = $uploadedFileUrl;
         }
 
         $course->update($data); 
@@ -171,7 +174,9 @@ class CourseController extends Controller
     public function destroy($id)
     {
         $course = Course::findOrFail($id);
-        if ($course->thumbnail_url) Storage::disk('public')->delete($course->thumbnail_url);
+        
+        // Optional: Add logic here to delete from Cloudinary using Public ID if needed.
+        
         $course->delete();
         return response()->json(['message' => 'Course deleted successfully']);
     }
