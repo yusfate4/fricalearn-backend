@@ -16,6 +16,7 @@ class ParentController extends Controller
 {
     /**
      * 🧠 Helper: Unified ID fetcher
+     * This ensures we find children via the pivot table OR the direct parent_id column.
      */
     private function getLinkedChildIds($parent)
     {
@@ -27,7 +28,7 @@ class ParentController extends Controller
 
     /**
      * 📊 Master Dashboard Data
-     * Dynamically determines the "Track" based on active enrollment.
+     * Fix: Ensures active_enrollments are correctly mapped for the frontend.
      */
     public function getDashboardData(Request $request)
     {
@@ -37,24 +38,27 @@ class ParentController extends Controller
         // 1. Fetch Children with Profiles
         $children = User::whereIn('id', $childIds)->with(['studentProfile'])->get();
 
-        // 2. Fetch Active Enrollments with Course titles
+        // 2. Fetch Active Enrollments (The bridge between student and classroom)
         $activeEnrollments = CourseEnrollment::with(['course'])
             ->whereIn('student_id', $childIds)
             ->where('status', 'active')
             ->get();
 
-        // 3. Fetch Pending Payments for the Parent
+        // 3. Fetch Pending Payments (To show the "Awaiting Verification" section)
         $pendingPayments = EnrollmentPayment::with(['course'])
             ->where('parent_id', $parent->id)
             ->where('status', 'pending')
             ->latest()
             ->get();
 
-        // 🚀 THE LOGIC FIX: Map the Course Title as the "Track"
+        // 🚀 THE LOGIC FIX: Explicitly map the "Track" to the child object
         $childrenWithTracks = $children->map(function($child) use ($activeEnrollments) {
+            // Find the specific enrollment for this child
             $enrollment = $activeEnrollments->where('student_id', $child->id)->first();
             
-            // Priority: Active Course Name > Profile Language > Default
+            // Priority 1: Current Course Title
+            // Priority 2: Profile language preference
+            // Priority 3: Fallback
             if ($enrollment && $enrollment->course) {
                 $child->current_track = $enrollment->course->title; 
             } else {
@@ -65,7 +69,7 @@ class ParentController extends Controller
 
         return response()->json([
             'parent_name'        => $parent->name,
-            'active_enrollments' => $activeEnrollments,
+            'active_enrollments' => $activeEnrollments, // React uses this to enable the "Enter" button
             'pending_payments'   => $pendingPayments,
             'children'           => $childrenWithTracks, 
             'stats' => [
@@ -95,11 +99,6 @@ class ParentController extends Controller
         $courses = Course::whereIn('id', $courseIds)->get();
 
         return response()->json([
-            'debug' => [
-                'searching_for_student' => $studentId,
-                'found_enrollment_ids' => $courseIds,
-                'total_courses_found' => $courses->count()
-            ],
             'courses' => $courses
         ]);
     }
@@ -135,6 +134,7 @@ class ParentController extends Controller
                 'rank' => 'Akeko'
             ]);
 
+            // Ensure they are linked via the pivot table too
             $request->user()->children()->syncWithoutDetaching([
                 $student->id => ['relationship' => $validated['relationship'] ?? 'Parent']
             ]);
