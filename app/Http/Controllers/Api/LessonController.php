@@ -9,10 +9,10 @@ use App\Models\Attachment;
 use App\Models\LessonContent;
 use App\Models\StudentProfile;
 use App\Models\Module;
-use App\Services\FileUploadService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
-use App\Models\EnrollmentPayment;
+// 🚀 Use the pure Cloudinary SDK to bypass Service Provider errors
+use Cloudinary\Cloudinary;
 
 class LessonController extends Controller
 {
@@ -45,7 +45,7 @@ class LessonController extends Controller
     {
         $user = $request->user();
         
-        // 🛡️ THE FIX: Use Child ID if Parent is impersonating
+        // 🛡️ Use Child ID if Parent is impersonating
         $targetUserId = $request->header('X-Active-Student-Id') ?: $user->id;
 
         $progress = ProgressRecord::updateOrCreate(
@@ -63,7 +63,7 @@ class LessonController extends Controller
     {
         $user = $request->user();
         
-        // 🛡️ THE FIX: Ensure coins go to the Child, not the Parent
+        // 🛡️ Ensure coins go to the Child, not the Parent
         $targetUserId = $request->header('X-Active-Student-Id') ?: $user->id;
 
         $validated = $request->validate([
@@ -71,7 +71,6 @@ class LessonController extends Controller
             'points' => 'nullable|integer',
         ]);
 
-        // Find the STUDENT PROFILE for the target (Child)
         $profile = StudentProfile::firstOrCreate(
             ['user_id' => $targetUserId],
             ['total_points' => 0, 'total_coins' => 0]
@@ -80,7 +79,6 @@ class LessonController extends Controller
         $pointsAwarded = $validated['points'] ?? 50;
         $passed = $validated['score'] >= 70;
 
-        // Update the Child's balance
         $profile->increment('total_points', $pointsAwarded);
         
         if ($passed) {
@@ -101,8 +99,7 @@ class LessonController extends Controller
             'score'        => $progress->score,
             'total_points' => $profile->total_points,
             'total_coins'  => $profile->total_coins,
-            'passed'       => $passed,
-            'target_user'  => $targetUserId // Debugging info
+            'passed'       => $passed
         ]);
     }
 
@@ -159,35 +156,66 @@ class LessonController extends Controller
         return response()->json($lesson->load('attachments'), 201);
     }
 
+    /**
+     * 🏗️ UPLOAD LESSON CONTENT (Cloudinary Fixed Method)
+     */
     public function uploadContent(Request $request, $id)
     {
-        if (!auth()->user()->is_admin) {
+        $isAdmin = auth()->user()->role === 'admin' || Number(auth()->user()->is_admin) === 1;
+        if (!$isAdmin) {
             return response()->json(['message' => 'Admin only.'], 403);
         }
 
         $lesson = Lesson::findOrFail($id);
+        
         $validated = $request->validate([
-            'file' => 'required|file|mimes:mp4,pdf,ppt,pptx,mp3,wav,jpg,png|max:102400', 
+            'file' => 'required|file|max:102400', // 100MB Limit
             'content_type' => 'required|in:video,document,audio,image',
         ]);
 
-        $fileService = new FileUploadService();
-        $url = '';
-        
-        switch ($validated['content_type']) {
-            case 'video': $url = $fileService->uploadVideo($validated['file']); break;
-            case 'document': $url = $fileService->uploadDocument($validated['file']); break;
-            case 'audio': $url = $fileService->uploadAudio($validated['file']); break;
-            case 'image': $url = $fileService->uploadImage($validated['file']); break;
-        }
-
-        $content = LessonContent::create([
-            'lesson_id' => $lesson->id,
-            'content_type' => $validated['content_type'],
-            'file_url' => $url,
+        // 🚀 Manual SDK Setup to bypass the "null" ServiceProvider error
+        $cloudinary = new Cloudinary([
+            'cloud' => [
+                'cloud_name' => env('CLOUDINARY_CLOUD_NAME'),
+                'api_key'    => env('CLOUDINARY_API_KEY'),
+                'api_secret' => env('CLOUDINARY_API_SECRET'),
+            ],
         ]);
 
-        return response()->json(['message' => 'File uploaded', 'url' => $url, 'data' => $content], 201);
+        try {
+            $file = $request->file('file');
+            
+            // Set resource_type based on the content being uploaded
+            $resourceType = ($validated['content_type'] === 'video' || $validated['content_type'] === 'audio') 
+                ? 'video' 
+                : 'auto';
+
+            $upload = $cloudinary->uploadApi()->upload(
+                $file->getRealPath(),
+                [
+                    'folder' => 'fricalearn/lessons',
+                    'resource_type' => $resourceType
+                ]
+            );
+
+            $content = LessonContent::create([
+                'lesson_id' => $lesson->id,
+                'content_type' => $validated['content_type'],
+                'file_url' => $upload['secure_url'],
+            ]);
+
+            return response()->json([
+                'message' => 'Material uploaded successfully!',
+                'url' => $upload['secure_url'],
+                'data' => $content
+            ], 201);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'error' => 'Cloudinary Upload Failed', 
+                'details' => $e->getMessage()
+            ], 500);
+        }
     }
 
     public function update(Request $request, $id)
@@ -212,7 +240,6 @@ class LessonController extends Controller
 
     public function getCourseLessons($courseId)
     {
-        $user = auth()->user();
         return Lesson::where('course_id', $courseId)->get();
     }
 }

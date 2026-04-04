@@ -58,9 +58,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/ai/hint', [AIHintController::class, 'getHint']);
     Route::post('/ai/chat-olu', [AiController::class, 'chatWithOlu']);
     
-    /** * 🎙️ AI PRONUNCIATION: Now handles Whisper transcription & Silence check
-     * Note: We moved this here to ensure it is protected by Sanctum
-     */
     Route::post('/ai/verify-pronunciation', [AiController::class, 'verifyPronunciation']);
 
     // 🏆 --- GAMIFICATION (Student View) ---
@@ -100,19 +97,18 @@ Route::middleware('auth:sanctum')->group(function () {
     */
     Route::middleware('admin')->prefix('admin')->group(function () {
         
-        // 📈 Admin Dashboard Stats
         Route::get('/stats', [AnalyticsController::class, 'adminStats']);
 
         // 💬 --- ADMIN CHAT MANAGEMENT ---
         Route::prefix('conversations')->group(function () {
             Route::get('/', [ChatController::class, 'getAdminConversations']); 
-            Route::get('/{id}/messages', [ChatController::class, 'getAdminMessages']); // Fetch full chat
-            Route::post('/{id}/read', [ChatController::class, 'markAsRead']);         // Set read status
+            Route::get('/{id}/messages', [ChatController::class, 'getAdminMessages']); 
+            Route::post('/{id}/read', [ChatController::class, 'markAsRead']);         
         });
 
         // 🏗️ --- COURSE & LESSON MANAGEMENT ---
         Route::prefix('courses')->group(function () {
-            Route::get('/', [CourseController::class, 'index']); // 👈 Fixed: Now allows GET for Question dropdowns
+            Route::get('/', [CourseController::class, 'index']); 
             Route::post('/', [CourseController::class, 'store']);
             Route::post('/{id}', [CourseController::class, 'update']); 
             Route::delete('/{id}', [CourseController::class, 'destroy']);
@@ -123,10 +119,13 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::post('/', [LessonController::class, 'store']);
             Route::post('/{id}', [LessonController::class, 'update']); 
             Route::delete('/{id}', [LessonController::class, 'destroy']); 
+            
+            // 🚀 THE FIX: New Route for Lesson Content Upload (Videos/PDFs)
+            Route::post('/{id}/content', [LessonController::class, 'uploadContent']);
         });
 
         // 📝 --- QUIZ & AI TOOLS ---
-        Route::get('/questions', [QuestionController::class, 'index']); // Added for management table
+        Route::get('/questions', [QuestionController::class, 'index']); 
         Route::post('/questions', [QuestionController::class, 'store']);
         Route::post('/ai/generate-quiz', [AIQuizController::class, 'generate']);
         Route::post('/update-schedule', [AiController::class, 'updateSchedule']);
@@ -141,13 +140,13 @@ Route::middleware('auth:sanctum')->group(function () {
 
         // 🎁 --- REWARDS & MARKETPLACE MANAGEMENT ---
         Route::prefix('rewards')->group(function () {
-            Route::get('/', [RewardController::class, 'index']);       // 👈 Admin Management
+            Route::get('/', [RewardController::class, 'index']);       
             Route::post('/', [RewardController::class, 'store']);
             Route::post('/{id}', [RewardController::class, 'update']); 
             Route::delete('/{id}', [RewardController::class, 'destroy']);
         });
 
-        // 🛒 Fulfillment logic (Purchases made by students)
+        // 🛒 Fulfillment logic
         Route::get('/redemptions', [GamificationController::class, 'getAllRedemptions']);
         Route::post('/redemptions/{id}/fulfill', [GamificationController::class, 'fulfillRedemption']);
 
