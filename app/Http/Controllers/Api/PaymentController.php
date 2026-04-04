@@ -11,7 +11,7 @@ use App\Models\Course;
 use App\Models\User;
 use App\Models\StudentProfile;
 use Illuminate\Support\Facades\DB;
-// 🚀 Use the pure Cloudinary SDK for manual injection
+// 🚀 Use the pure Cloudinary SDK
 use Cloudinary\Cloudinary;
 
 class PaymentController extends Controller
@@ -41,6 +41,7 @@ class PaymentController extends Controller
 
         return DB::transaction(function () use ($validated, $parent, $request, $cloudinary) {
             
+            // Step 1: Initialize Student
             $student = User::firstOrCreate(
                 [
                     'name' => trim($validated['child_name']), 
@@ -54,6 +55,7 @@ class PaymentController extends Controller
                 ]
             );
 
+            // Step 2: Upload to Cloudinary
             try {
                 $upload = $cloudinary->uploadApi()->upload(
                     $request->file('receipt')->getRealPath(),
@@ -64,6 +66,7 @@ class PaymentController extends Controller
                 throw new \Exception("Receipt upload failed: " . $e->getMessage());
             }
 
+            // Step 3: Create Payment Record
             $payment = EnrollmentPayment::create([
                 'parent_id'    => $parent->id,
                 'user_id'      => $student->id, 
@@ -71,7 +74,7 @@ class PaymentController extends Controller
                 'child_name'   => trim($validated['child_name']),
                 'amount'       => $validated['amount'],
                 'currency'     => $validated['currency'],
-                'receipt_path' => $receiptUrl, // Correctly storing full Cloudinary URL
+                'receipt_path' => $receiptUrl,
                 'status'       => 'pending',
             ]);
 
@@ -98,9 +101,13 @@ class PaymentController extends Controller
                 return response()->json(['message' => 'Already approved.'], 400);
             }
 
+            // 1. Locate and link student
             $student = User::where('role', 'student')->where('id', $payment->user_id)->first();
 
-            if (!$student) {
+            if ($student) {
+                // Ensure the parent_id is set correctly so they show up in the Parent Dashboard
+                $student->update(['parent_id' => $payment->parent_id]);
+            } else {
                 $student = User::create([
                     'name' => trim($payment->child_name),
                     'email' => strtolower(str_replace(' ', '', $payment->child_name)) . '_' . rand(100, 999) . '@fricalearn.com',
@@ -110,12 +117,20 @@ class PaymentController extends Controller
                 ]);
             }
 
+            // 2. Sync Parent-Child Relationship (Pivot table check)
+            $parent = User::find($payment->parent_id);
+            if ($parent && method_exists($parent, 'children')) {
+                $parent->children()->syncWithoutDetaching([$student->id => ['relationship' => 'Parent']]);
+            }
+
+            // 3. Update Payment Status
             $payment->update([
                 'user_id' => $student->id,
                 'status' => 'approved',
                 'approved_at' => now(),
             ]);
 
+            // 4. Activate Course Enrollment
             CourseEnrollment::updateOrCreate(
                 ['course_id' => $payment->course_id, 'student_id' => $student->id],
                 [
@@ -125,6 +140,7 @@ class PaymentController extends Controller
                 ]
             );
 
+            // 5. Setup Student Profile & Track
             $course = Course::find($payment->course_id);
             $trackName = $course ? ($course->subject ?? $course->title) : 'General'; 
 
@@ -138,13 +154,12 @@ class PaymentController extends Controller
                 ]
             );
 
-            return response()->json(['message' => "Success! Account activated."]);
+            return response()->json(['message' => "Success! Account activated and visible to Parent."]);
         });
     }
 
     /**
      * 👑 Admin: Fetch all pending payments
-     * THE FIX: Ensure receipt_path doesn't get double-prefixed on the frontend
      */
     public function getPendingPayments()
     {
@@ -153,7 +168,6 @@ class PaymentController extends Controller
             ->latest()
             ->get();
 
-        // 🚀 Clean the URLs before sending to Admin panel
         $payments->transform(function($payment) {
             if ($payment->receipt_path && !str_starts_with($payment->receipt_path, 'http')) {
                 $payment->receipt_path = asset('storage/' . $payment->receipt_path);
@@ -172,7 +186,7 @@ class PaymentController extends Controller
         $payments = EnrollmentPayment::with(['parent:id,name', 'course:id,title'])
             ->whereIn('status', ['approved', 'rejected'])
             ->latest()
-            ->get();
+            get();
 
         $payments->transform(function($payment) {
             if ($payment->receipt_path && !str_starts_with($payment->receipt_path, 'http')) {
