@@ -18,6 +18,7 @@ return [
  'paths' => ['api/*', 'sanctum/csrf-cookie', 'storage/*'], 
     'allowed_methods' => ['*'],
     'allowed_origins' => [
+    'https://fricalearn.netlify.app',
     'http://localhost:5173', // 👈 Add this line
     'http://localhost:5174', // This is what was causing the error
 ],
