@@ -72,15 +72,15 @@ class PaymentController extends Controller
 
             // 📄 Create Payment Record
             $payment = EnrollmentPayment::create([
-                'parent_id'    => $parent->id,
-                'user_id'      => $student->id, 
-                'course_id'    => $validated['course_id'],
-                'child_name'   => trim($validated['child_name']),
-                'amount'       => $validated['amount'],
-                'currency'     => $validated['currency'],
-                'receipt_path' => $receiptUrl,
-                'status'       => 'pending',
-            ]);
+            'parent_id'    => $parent->id,
+            'student_id'   => $student->id, // 👈 Make sure this matches the new column!
+            'course_id'    => $validated['course_id'],
+            'child_name'   => trim($validated['child_name']),
+            'amount'       => $validated['amount'],
+            'currency'     => $validated['currency'],
+            'receipt_path' => $receiptUrl,
+            'status'       => 'pending',
+                 ]);
 
             return response()->json([
                 'message' => 'Receipt submitted successfully! Admin will verify soon.',
