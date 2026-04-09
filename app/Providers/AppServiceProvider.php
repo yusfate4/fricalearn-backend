@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use Illuminate\Support\ServiceProvider;
+use Illuminate\Auth\Notifications\ResetPassword;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -17,8 +18,9 @@ class AppServiceProvider extends ServiceProvider
     /**
      * Bootstrap any application services.
      */
-    public function boot(): void
-    {
-        //
-    }
+   public function boot() {
+    ResetPassword::createUrlUsing(function ($user, string $token) {
+        return 'https://fricalearn.netlify.app/reset-password?token='.$token.'&email='.$user->email;
+    });
+}
 }

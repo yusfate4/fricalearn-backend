@@ -7,19 +7,25 @@ use App\Models\User;
 use App\Models\StudentProfile;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Password; // 👈 Added for Forgot Password
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
+use Illuminate\Auth\Events\Registered; // 👈 Added for Email Verification
+use Illuminate\Support\Str;
 
 class AuthController extends Controller
 {
+    /**
+     * 📝 Register a new user with Student Profile logic
+     */
     public function register(Request $request)
     {
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'email' => 'required|string|email|max:255|unique:users',
-            'password' => 'required|string|min:8',
+            'password' => 'required|string|min:8|confirmed', // 👈 Added 'confirmed' for security
             'role' => 'required|in:student,parent,tutor',
             'country' => 'nullable|string|max:100',
-            'timezone' => 'nullable|string|max:100',
             
             // Student-specific fields
             'date_of_birth' => 'required_if:role,student|date',
@@ -33,7 +39,7 @@ class AuthController extends Controller
             'password' => Hash::make($validated['password']),
             'role' => $validated['role'],
             'country' => $validated['country'] ?? null,
-            'timezone' => $validated['timezone'] ?? 'UTC',
+            'timezone' => 'Africa/Lagos', // 🚀 Hardcoded to WAT as per Priority 5
         ]);
 
         // Create student profile if role is student
@@ -43,22 +49,27 @@ class AuthController extends Controller
                 'date_of_birth' => $validated['date_of_birth'],
                 'grade_level' => $validated['grade_level'],
                 'learning_language' => $validated['learning_language'],
+                'daily_ai_minutes' => 0, // 🛡️ Priority 2: AI Guardrails
             ]);
         }
 
+        // 📧 Trigger Email Verification Event (Sends email via Brevo)
+        event(new Registered($user));
+
         $token = $user->createToken('auth_token')->plainTextToken;
 
-        /**
-         * 🚀 Load relevant profiles based on role
-         */
         $loadRelations = $user->role === 'parent' ? ['children'] : ['studentProfile'];
 
         return response()->json([
+            'message' => 'Registration successful! Oluko has sent a verification email.',
             'user' => $user->load($loadRelations),
             'token' => $token,
         ], 201);
     }
 
+    /**
+     * 🔑 Login
+     */
     public function login(Request $request)
     {
         $request->validate([
@@ -74,7 +85,8 @@ class AuthController extends Controller
             ]);
         }
 
-        if (!$user->is_active) {
+        // 🛡️ Check if account is active
+        if (isset($user->is_active) && !$user->is_active) {
             return response()->json([
                 'message' => 'Your account is inactive. Please contact support.',
             ], 403);
@@ -85,35 +97,70 @@ class AuthController extends Controller
 
         $token = $user->createToken('auth_token')->plainTextToken;
 
-        /**
-         * 🚀 Load children for parents and profiles for students/tutors
-         */
         return response()->json([
             'user' => $user->load(['studentProfile', 'tutorProfile', 'children.studentProfile']),
             'token' => $token,
         ]);
     }
 
-    public function logout(Request $request)
+    /**
+     * 📩 Forgot Password (Brevo Integration)
+     */
+    public function forgotPassword(Request $request)
     {
-        $request->user()->currentAccessToken()->delete();
+        $request->validate(['email' => 'required|email']);
 
-        return response()->json([
-            'message' => 'Successfully logged out',
-        ]);
+        // Sends link to Netlify URL defined in AppServiceProvider
+        $status = Password::sendResetLink($request->only('email'));
+
+        return $status === Password::RESET_LINK_SENT
+            ? response()->json(['message' => 'Oluko has sent a reset link to your inbox!'])
+            : response()->json(['message' => 'We could not find a user with that email.'], 400);
     }
 
     /**
-     * Get the authenticated user with all relevant context
+     * 🔄 Reset Password (The final step)
+     */
+    public function resetPassword(Request $request)
+    {
+        $request->validate([
+            'token' => 'required',
+            'email' => 'required|email',
+            'password' => 'required|min:8|confirmed',
+        ]);
+
+        $status = Password::reset(
+            $request->only('email', 'password', 'password_confirmation', 'token'),
+            function ($user, $password) {
+                $user->forceFill([
+                    'password' => Hash::make($password)
+                ])->setRememberToken(Str::random(60))->save();
+            }
+        );
+
+        return $status === Password::PASSWORD_RESET
+            ? response()->json(['message' => 'Success! Your password is changed. Please login.'])
+            : response()->json(['message' => 'Invalid token or email.'], 400);
+    }
+
+    /**
+     * 👤 Get the authenticated user
      */
     public function me(Request $request)
     {
         $user = $request->user();
-
-        // Dynamically load data so the frontend has everything it needs
         return response()->json($user->load([
             'studentProfile', 
-            'children.studentProfile' // 👈 Essential for the Parent Dashboard
+            'children.studentProfile'
         ]));
+    }
+
+    /**
+     * 🚪 Logout
+     */
+    public function logout(Request $request)
+    {
+        $request->user()->currentAccessToken()->delete();
+        return response()->json(['message' => 'Successfully logged out']);
     }
 }
