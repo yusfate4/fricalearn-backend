@@ -31,8 +31,8 @@ Route::post('/login', [AuthController::class, 'login']);
 Route::get('/public/analytics/{studentId}', [AnalyticsController::class, 'publicStudentStats']);
 
 // 🔑 PASSWORD RESET ROUTES 
-Route::post('/auth/forgot-password', [AuthController::class, 'forgotPassword']);
-Route::post('/auth/reset-password', [AuthController::class, 'resetPassword']);
+Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
+Route::post('/reset-password', [AuthController::class, 'resetPassword']);
 
 // 📅 AI Global Schedule (Publicly viewable for timer math)
 Route::get('/ai/active-schedule', [AiController::class, 'getActiveSchedule']);
