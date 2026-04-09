@@ -129,10 +129,11 @@ public function resetPassword(Request $request)
         'password' => 'required|min:8|confirmed',
     ]);
 
+    // This is the core logic that was crashing
     $status = Password::reset(
         $request->only('email', 'password', 'password_confirmation', 'token'),
         function ($user, $password) {
-            // Check if user exists before saving
+            // Guard against null user
             if ($user) {
                 $user->forceFill([
                     'password' => Hash::make($password)
@@ -141,9 +142,10 @@ public function resetPassword(Request $request)
         }
     );
 
+    // If $user was null, $status will not be PASSWORD_RESET
     return $status === Password::PASSWORD_RESET
-        ? response()->json(['message' => __($status)], 200)
-        : response()->json(['message' => __($status)], 400);
+        ? response()->json(['message' => 'Password has been reset successfully.'], 200)
+        : response()->json(['message' => __($status)], 400); 
 }
     /**
      * 👤 Get the authenticated user
