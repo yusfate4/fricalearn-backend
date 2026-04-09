@@ -140,10 +140,15 @@ Route::middleware('auth:sanctum')->group(function () {
         });
 
         // 🎁 --- REWARDS & MARKETPLACE MANAGEMENT ---
+     // In your routes/api.php
         Route::prefix('rewards')->group(function () {
             Route::get('/', [RewardController::class, 'index']);       
             Route::post('/', [RewardController::class, 'store']);
+            
+            // 🚀 THE FIX: Change this from Route::put to Route::post
+            // This allows you to send files via POST directly to the update function
             Route::post('/{id}', [RewardController::class, 'update']); 
+            
             Route::delete('/{id}', [RewardController::class, 'destroy']);
         });
 

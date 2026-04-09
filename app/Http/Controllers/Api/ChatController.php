@@ -16,33 +16,45 @@ class ChatController extends Controller
     /**
      * 🚪 Get or Create a conversation (Universal)
      */
-    public function getConversation(Request $request)
-    {
-        $user = $request->user();
-        $adminId = 1; // Yusuf's Admin ID (The Tutor)
+   public function getConversation(Request $request)
+{
+    $user = $request->user();
+    $adminId = 1; 
 
-        // If admin is viewing a specific student, or a student is starting a chat
-        $participantId = ($user->role === 'admin' || $user->is_admin == 1) 
-            ? $request->query('participant_id') 
-            : $user->id;
+    // Determine who the other person is
+    $participantId = ($user->role === 'admin' || $user->is_admin == 1) 
+        ? $request->query('participant_id') 
+        : $user->id;
 
-        if (!$participantId) {
-            return response()->json(['message' => 'Participant ID is required.'], 400);
-        }
-
-        // Find or Create the "Room"
-        $conversation = Conversation::firstOrCreate([
-            'student_id' => $participantId,
-            'tutor_id' => $adminId,
-        ]);
-
-        return response()->json($conversation->load([
-            'messages.sender', 
-            'student', 
-            'tutor'
-        ]));
+    if (!$participantId) {
+        return response()->json(['message' => 'Participant ID is required.'], 400);
     }
 
+    // 1. Find or create the conversation "Room"
+    $conversation = Conversation::firstOrCreate([
+        'student_id' => $participantId,
+        'tutor_id'   => $adminId,
+    ]);
+
+    // 🚀 THE CRITICAL FIX: 
+    // Sometimes the admin sends messages via receiver_id but doesn't attach the convo_id.
+    // We update any orphaned messages to belong to this conversation.
+    Message::where('conversation_id', null)
+        ->where(function($q) use ($participantId, $adminId) {
+            $q->where([['sender_id', $participantId], ['receiver_id', $adminId]])
+              ->orWhere([['sender_id', $adminId], ['receiver_id', $participantId]]);
+        })->update(['conversation_id' => $conversation->id]);
+
+    // 2. Mark incoming messages as read for the current user
+    $this->markAsRead($conversation->id);
+
+    // 3. Return the conversation with all messages
+    return response()->json($conversation->load([
+        'messages.sender', 
+        'student', 
+        'tutor'
+    ]));
+}
     /**
      * 📩 Send a new message
      */

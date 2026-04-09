@@ -7,48 +7,60 @@ use Illuminate\Http\Request;
 use OpenAI;
 use Illuminate\Support\Facades\Log;
 use App\Models\MasterSchedule;
+use App\Models\User;
 
 class AiController extends Controller
 {
     /**
-     * Chat with Olu - The AI Yoruba Tutor
-     * Handles conversational AI with short-term memory (history).
+     * Chat with Oluko - The AI Heritage Tutor
+     * Handles focused conversational AI with session time limits.
      */
     public function chatWithOlu(Request $request)
     {
+        $user = $request->user();
         $userMessage = $request->input('message');
         $history = $request->input('history', []); 
 
-        $apiKey = env('OPENAI_API_KEY');
-
-        if (!$apiKey) {
+        // 🛡️ 1. TIMEBOX GUARDRAIL (Item 10)
+        // Max 120 minutes per day. We assume each message exchange represents ~1 minute of engagement.
+        $profile = $user->studentProfile;
+        if ($profile && $profile->daily_ai_minutes >= 120) {
             return response()->json([
-                'reply' => "Olu is sleeping right now (Missing API Key). Please tell the Admin! 😴"
-            ], 500);
+                'reply' => "Oluko is resting now to prepare for our next adventure! 🌙 You've done amazing work today. See you tomorrow!",
+                'status' => 'limit_reached'
+            ], 403);
+        }
+
+        $apiKey = env('OPENAI_API_KEY');
+        if (!$apiKey) {
+            return response()->json(['reply' => "Oluko is sleeping (API Key Missing). 😴"], 500);
         }
 
         $client = OpenAI::client($apiKey);
 
-        // 🎙️ THE OLU PERSONALITY PROMPT
-        $systemPrompt = "You are Olu, a friendly Yoruba language tutor for kids in the diaspora. 
-        Your tone is energetic, encouraging, and fun. Use emojis like 🌟, 🐢, and 🇳🇬.
-        Rules:
-        1. Speak primarily in Yoruba but ALWAYS provide English translations in parentheses immediately after.
-        2. Keep sentences short and simple for a child (Ayo) to understand.
-        3. If the user makes a grammar mistake in Yoruba, gently correct them and encourage them.
-        4. Focus on conversational Yoruba (greetings, food, family, animals).
-        5. NEVER break character. You are a real tutor, not an AI.";
+        // 🧠 2. DYNAMIC IDENTITY & FOCUS (Items 5, 7, 11)
+        $studentName = $user->name ?? 'Ayo';
+        $language = $profile->learning_language ?? 'Yoruba';
 
-        $messages = [
-            ['role' => 'system', 'content' => $systemPrompt]
-        ];
+      // 🎙️ THE STRENGTHENED OLỤKỌ GUARDRAIL PROMPT
+        $systemPrompt = "You are 'Olụkọ', the Heritage Language Teacher for FricaLearn. 
 
-        // Keep context manageable by taking the last 4 exchanges
+        STRICT OPERATING PROCEDURES:
+        1. MISSION: Your only job is to teach {$language}. 
+        2. OFF-LIMITS TOPICS: Football (Arsenal, Chelsea, Barca, Ronaldo, etc.), Video Games, Movies, and Pop Culture are STICKY TRAPS. 
+        3. THE SHUT-DOWN RULE: If {$studentName} mentions a sticky trap topic, you MUST say: 
+        'That is interesting! But as your Olụkọ, I am here to help you master {$language}. We must stay focused on our lesson. Let\'s go back to [Topic]!'
+        4. DO NOT translate off-topic sentences. (e.g., Do NOT teach them how to say 'I love Arsenal' in Yoruba). This encourages them to keep talking about football.
+        5. NO FOLLOW-UP QUESTIONS: Never ask the student about their favorite player, team, or position. 
+
+        PEDAGOGY:
+        - Speak primarily in {$language} with English translations.
+        - If {$studentName} is distracted, gently but firmly lead them back to Greetings, Family, or Numbers.";
+
+        $messages = [['role' => 'system', 'content' => $systemPrompt]];
+
         foreach (array_slice($history, -4) as $chat) {
-            $messages[] = [
-                'role' => $chat['role'], 
-                'content' => $chat['content']
-            ];
+            $messages[] = ['role' => $chat['role'], 'content' => $chat['content']];
         }
 
         $messages[] = ['role' => 'user', 'content' => $userMessage];
@@ -63,138 +75,108 @@ class AiController extends Controller
 
             $reply = $response->choices[0]->message->content;
 
+            // 📈 3. INCREMENT USAGE (Item 10)
+            if ($profile) {
+                $profile->increment('daily_ai_minutes', 1); 
+            }
+
             return response()->json([
                 'reply' => $reply,
                 'status' => 'success'
             ]);
 
         } catch (\Exception $e) {
-            Log::error("Olu Chat Error: " . $e->getMessage());
+            Log::error("Oluko Chat Error: " . $e->getMessage());
             return response()->json([
-                'reply' => "E dárí jìn mí (Forgive me), I got a bit confused. Can you say that again?",
-                'error' => $e->getMessage()
+                'reply' => "E dárí jìn mí (Forgive me), I got a bit confused. Let's try again!",
             ], 500);
         }
     }
 
     /**
      * Verify Pronunciation
-     * Uses OpenAI Whisper to transcribe audio and compare against expected text.
      */
     public function verifyPronunciation(Request $request)
     {
-        // 1. Initial Validation
         if (!$request->hasFile('audio')) {
             return response()->json(['error' => 'No audio file provided'], 400);
         }
 
         $expected = $request->input('expected_text', '');
         $apiKey = env('OPENAI_API_KEY');
+        $user = $request->user();
 
-        if (!$apiKey) {
-            return response()->json(['error' => 'AI Configuration missing on server'], 500);
-        }
+        try {
+            $client = OpenAI::client($apiKey);
+            $file = $request->file('audio');
 
-       try {
-    $client = OpenAI::client($apiKey);
-    $file = $request->file('audio');
-
-    // 🚀 THE STABLE FIX: Open the file directly from its temporary path
-    $response = retry(2, function () use ($client, $file) {
-        return $client->audio()->transcribe([
-            'model' => 'whisper-1',
-            // Pass the stream directly using the temporary real path
-            'file' => fopen($file->getRealPath(), 'r'),
-        ]);
-    }, 500);
-
-    $transcript = trim($response->text);
-
-            /**
-             * 🎙️ 2. Transcribe using Whisper
-             * We wrap this in a retry() to handle the 'Rate Limit' or 'Service Busy' blips.
-             */
             $response = retry(2, function () use ($client, $file) {
                 return $client->audio()->transcribe([
                     'model' => 'whisper-1',
                     'file' => fopen($file->getRealPath(), 'r'),
                 ]);
-            }, 500); // Wait 500ms between attempts
+            }, 500);
 
             $transcript = trim($response->text);
 
-            /**
-             * 🚀 3. THE SILENCE GUARD
-             * If the transcription is empty, the student likely didn't speak.
-             */
             if (empty($transcript)) {
                 return response()->json([
                     'score' => 0,
-                    'feedback' => "Olu didn't hear anything! 👂 Please try speaking clearly.",
+                    'feedback' => "Oluko didn't hear anything! 👂 Please speak clearly.",
                     'coins_earned' => 0
                 ]);
             }
 
-            /**
-             * 🧠 4. Comparison Logic
-             * Strip punctuation and lowercase both strings for a fair comparison.
-             */
             $cleanTranscript = strtolower(preg_replace('/[^\w\s]/', '', $transcript));
             $cleanExpected = strtolower(preg_replace('/[^\w\s]/', '', $expected));
 
             similar_text($cleanExpected, $cleanTranscript, $percent);
             $score = round($percent);
 
-            // Safety check: Don't give high scores to single-letter background noise
-            if (strlen($cleanTranscript) < 2 && strlen($cleanExpected) > 3) {
-                $score = min($score, 10);
-            }
+            // 🎯 Point Adjustment (Item 5 logic: Scale to 5-point chunks)
+            $points = ($score >= 80) ? 5 : 0; 
 
-            // Determine Feedback based on accuracy
-            $feedback = "Almost there! Keep practicing. 👍";
+            $feedback = "Keep practicing! 👍";
             if ($score >= 90) {
-                $feedback = "Ẹ kú iṣẹ́! Perfect pronunciation! 🌟";
-            } elseif ($score >= 75) {
-                $feedback = "Great job! You're sounding like a pro. 👍";
+                $feedback = "Ẹ kú iṣẹ́! Perfect! 🌟";
+            } elseif ($score >= 70) {
+                $feedback = "Great effort! 👍";
             }
 
             return response()->json([
                 'score' => $score,
                 'feedback' => $feedback,
                 'heard' => $transcript,
-                'coins_earned' => $score >= 80 ? 20 : 0
+                'points_earned' => $points
             ]);
 
         } catch (\Exception $e) {
-            Log::error("Whisper Pronunciation Error: " . $e->getMessage());
-            
-            return response()->json([
-                'error' => 'AI Service Error',
-                'message' => $e->getMessage() 
-            ], 500);
+            Log::error("Whisper Error: " . $e->getMessage());
+            return response()->json(['error' => 'AI Service Error'], 500);
         }
     }
 
     /**
-     * Get the global active class schedule for the sidebar/timer.
+     * Get the global active class schedule (Nigeria Time - Item 4).
      */
     public function getActiveSchedule()
     {
+        // 🌍 Logic: Hardcoded to Africa/Lagos
+        date_default_timezone_set('Africa/Lagos');
+        
         $schedule = MasterSchedule::where('is_active', true)->first();
 
         if (!$schedule) {
-            return response()->json(['start_time' => '12:00'], 200); 
+            return response()->json(['start_time' => '12:00', 'timezone' => 'WAT'], 200); 
         }
 
         return response()->json([
             'day' => $schedule->day_of_week,
-            'start_time' => date('H:i', strtotime($schedule->start_time_wat))
+            'start_time' => date('H:i', strtotime($schedule->start_time_wat)),
+            'label' => 'Nigeria Time (WAT)'
         ]);
     }
 
-    /**
-     * Update the global class schedule (Admin Only).
-     */
     public function updateSchedule(Request $request)
     {
         $request->validate([
@@ -203,7 +185,7 @@ class AiController extends Controller
         ]);
 
         $schedule = MasterSchedule::updateOrCreate(
-            ['id' => 1], // Consistently update the primary record
+            ['id' => 1],
             [
                 'day_of_week' => $request->day_of_week,
                 'start_time_wat' => $request->start_time_wat,
@@ -211,6 +193,6 @@ class AiController extends Controller
             ]
         );
 
-        return response()->json(['message' => 'Global Schedule updated!']);
+        return response()->json(['message' => 'Schedule updated to Nigeria Time!']);
     }
 }

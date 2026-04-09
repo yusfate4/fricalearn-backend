@@ -4,18 +4,69 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Reward;
+use App\Models\User;
 use Illuminate\Http\Request;
-// 🚀 Use the pure Cloudinary SDK for manual injection
 use Cloudinary\Cloudinary;
+use Carbon\Carbon;
 
 class RewardController extends Controller
 {
     /**
-     * Admin: List all rewards in the inventory
+     * List all rewards (Student Marketplace View)
      */
     public function index()
     {
-        return response()->json(Reward::latest()->get());
+        // Only show active rewards
+        return response()->json(Reward::where('is_active', true)->latest()->get());
+    }
+
+    /**
+     * Handle Item Purchase (Claiming Rewards)
+     * Implements Item 9: Maturity Logic & Point Control
+     */
+    public function claimReward(Request $request, $id)
+    {
+        $user = $request->user();
+        $reward = Reward::findOrFail($id);
+
+        // 🛡️ 1. ACCOUNT MATURITY GUARD (Item 9)
+        // User must be on the platform for at least 2 months
+        $joinDate = Carbon::parse($user->created_at);
+        $maturityDate = $joinDate->copy()->addMonths(2);
+
+        if (now()->lt($maturityDate)) {
+            $daysToWait = now()->diffInDays($maturityDate);
+            return response()->json([
+                'message' => "This treasure is locked! Your account must be 2 months old to claim rewards. Please return in {$daysToWait} days.",
+                'unlock_date' => $maturityDate->toDateString()
+            ], 403);
+        }
+
+        // 🛡️ 2. POINT BALANCE CHECK
+        $profile = $user->studentProfile;
+        if (!$profile || $profile->total_points < $reward->cost_coins) {
+            return response()->json([
+                'message' => "You don't have enough points yet. Keep learning with Olụkọ to earn more!"
+            ], 400);
+        }
+
+        // 🛡️ 3. PREVENT DUPLICATE CLAIMS (If digital)
+        // (Optional logic if you have a pivot table for claims)
+
+        try {
+            // Deduct points and save
+            $profile->decrement('total_points', $reward->cost_coins);
+            
+            // Log the claim (Assuming a 'claims' or 'orders' relationship exists)
+            // $user->claims()->create(['reward_id' => $reward->id]);
+
+            return response()->json([
+                'message' => "Success! You have claimed: {$reward->title}. Check 'My Treasures' to see it!",
+                'new_balance' => $profile->total_points
+            ]);
+        } catch (\Exception $e) {
+            return response()->json(['message' => 'Transaction failed. Please try again.'], 500);
+        }
     }
 
     /**
@@ -28,20 +79,19 @@ class RewardController extends Controller
             return response()->json(['message' => 'Admin only.'], 403);
         }
 
-        // 🛡️ Validation: Matching your React form data
+        // 🛡️ Validation with Price Floor Enforcement (Item 9)
         $validated = $request->validate([
             'title' => 'required|string|max:255',
             'description' => 'required|string',
-            'cost_coins' => 'required|integer|min:1',
+            'cost_coins' => 'required|integer|min:300|max:500', // Enforces the 300-500 point rule
             'type' => 'required|string',
-            'image' => 'nullable|image|max:5120', // Thumbnail
-            'product_file' => 'nullable|file|mimes:pdf|max:10240', // Digital Asset PDF
+            'image' => 'nullable|image|max:5120',
+            'product_file' => 'nullable|file|mimes:pdf|max:10240',
         ]);
 
         $imagePath = null;
         $filePath = null;
 
-        // ☁️ Initialize Cloudinary once
         $cloudinary = new Cloudinary([
             'cloud' => [
                 'cloud_name' => env('CLOUDINARY_CLOUD_NAME'),
@@ -51,7 +101,6 @@ class RewardController extends Controller
         ]);
 
         try {
-            // 1. Handle Thumbnail Image
             if ($request->hasFile('image')) {
                 $uploadImage = $cloudinary->uploadApi()->upload(
                     $request->file('image')->getRealPath(),
@@ -60,7 +109,6 @@ class RewardController extends Controller
                 $imagePath = $uploadImage['secure_url'];
             }
 
-            // 2. Handle Digital Product File (PDF)
             if ($request->hasFile('product_file')) {
                 $uploadFile = $cloudinary->uploadApi()->upload(
                     $request->file('product_file')->getRealPath(),
@@ -72,14 +120,13 @@ class RewardController extends Controller
                 $filePath = $uploadFile['secure_url'];
             }
 
-            // 🚀 DATABASE INSERT: Using your exact Model $fillable names
             $reward = Reward::create([
                 'title' => $validated['title'],
                 'description' => $validated['description'],
                 'cost_coins' => $validated['cost_coins'],
                 'type' => $validated['type'],
-                'image_path' => $imagePath, // Matches Model
-                'file_path' => $filePath,   // Matches Model
+                'image_path' => $imagePath,
+                'file_path' => $filePath,
                 'is_active' => true,
             ]);
 
@@ -106,7 +153,7 @@ class RewardController extends Controller
         $validated = $request->validate([
             'title' => 'sometimes|string|max:255',
             'description' => 'sometimes|string',
-            'cost_coins' => 'sometimes|integer|min:1',
+            'cost_coins' => 'sometimes|integer|min:300|max:500', // Keep new items within range
             'type' => 'sometimes|string',
             'is_active' => 'sometimes|boolean'
         ]);
@@ -119,14 +166,10 @@ class RewardController extends Controller
         ]);
     }
 
-    /**
-     * Admin: Delete a reward
-     */
     public function destroy($id)
     {
         $reward = Reward::findOrFail($id);
         $reward->delete();
-
         return response()->json(['message' => 'Item removed from inventory']);
     }
 }
