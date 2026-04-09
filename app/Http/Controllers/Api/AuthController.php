@@ -121,28 +121,30 @@ class AuthController extends Controller
     /**
      * 🔄 Reset Password (The final step)
      */
-    public function resetPassword(Request $request)
-    {
-        $request->validate([
-            'token' => 'required',
-            'email' => 'required|email',
-            'password' => 'required|min:8|confirmed',
-        ]);
+public function resetPassword(Request $request)
+{
+    $request->validate([
+        'token' => 'required',
+        'email' => 'required|email',
+        'password' => 'required|min:8|confirmed',
+    ]);
 
-        $status = Password::reset(
-            $request->only('email', 'password', 'password_confirmation', 'token'),
-            function ($user, $password) {
+    $status = Password::reset(
+        $request->only('email', 'password', 'password_confirmation', 'token'),
+        function ($user, $password) {
+            // Check if user exists before saving
+            if ($user) {
                 $user->forceFill([
                     'password' => Hash::make($password)
                 ])->setRememberToken(Str::random(60))->save();
             }
-        );
+        }
+    );
 
-        return $status === Password::PASSWORD_RESET
-            ? response()->json(['message' => 'Success! Your password is changed. Please login.'])
-            : response()->json(['message' => 'Invalid token or email.'], 400);
-    }
-
+    return $status === Password::PASSWORD_RESET
+        ? response()->json(['message' => __($status)], 200)
+        : response()->json(['message' => __($status)], 400);
+}
     /**
      * 👤 Get the authenticated user
      */
