@@ -21,6 +21,12 @@ use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\RewardController;
 
 
+Route::get('/run-migration-yusuf', function () {
+    Artisan::call('migrate --force');
+    return "Migration successful!";
+});
+
+
 /*
 |--------------------------------------------------------------------------
 | 🔓 Public Routes
