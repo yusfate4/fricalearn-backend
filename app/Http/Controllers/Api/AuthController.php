@@ -7,10 +7,10 @@ use App\Models\User;
 use App\Models\StudentProfile;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Password; // 👈 Added for Forgot Password
+use Illuminate\Support\Facades\Password; 
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
-use Illuminate\Auth\Events\Registered; // 👈 Added for Email Verification
+use Illuminate\Auth\Events\Registered; 
 use Illuminate\Support\Str;
 
 class AuthController extends Controller
@@ -39,7 +39,7 @@ class AuthController extends Controller
             'password' => Hash::make($validated['password']),
             'role' => $validated['role'],
             'country' => $validated['country'] ?? null,
-            'timezone' => 'Africa/Lagos', // 🚀 Hardcoded to WAT as per Priority 5
+            'timezone' => 'Africa/Lagos', 
         ]);
 
         // Create student profile if role is student
@@ -49,11 +49,11 @@ class AuthController extends Controller
                 'date_of_birth' => $validated['date_of_birth'],
                 'grade_level' => $validated['grade_level'],
                 'learning_language' => $validated['learning_language'],
-                'daily_ai_minutes' => 0, // 🛡️ Priority 2: AI Guardrails
+                'daily_ai_minutes' => 0, 
             ]);
         }
 
-        // 📧 Trigger Email Verification Event (Sends email via Brevo)
+        // 📧 Trigger Email Verification Event
         event(new Registered($user));
 
         $token = $user->createToken('auth_token')->plainTextToken;
@@ -85,14 +85,12 @@ class AuthController extends Controller
             ]);
         }
 
-        // 🛡️ Check if account is active
         if (isset($user->is_active) && !$user->is_active) {
             return response()->json([
                 'message' => 'Your account is inactive. Please contact support.',
             ], 403);
         }
 
-        // Update last login
         $user->update(['last_login_at' => now()]);
 
         $token = $user->createToken('auth_token')->plainTextToken;
@@ -104,49 +102,50 @@ class AuthController extends Controller
     }
 
     /**
-     * 📩 Forgot Password (Brevo Integration)
+     * 📩 Forgot Password
      */
     public function forgotPassword(Request $request)
     {
         $request->validate(['email' => 'required|email']);
 
-        // Sends link to Netlify URL defined in AppServiceProvider
         $status = Password::sendResetLink($request->only('email'));
 
         return $status === Password::RESET_LINK_SENT
             ? response()->json(['message' => 'Oluko has sent a reset link to your inbox!'])
-            : response()->json(['message' => 'We could not find a user with that email.'], 400);
+            : response()->json(['message' => __($status)], 400);
     }
 
     /**
      * 🔄 Reset Password (The final step)
+     * Fixed to prevent "save() on null" 500 errors.
      */
-public function resetPassword(Request $request)
-{
-    $request->validate([
-        'token' => 'required',
-        'email' => 'required|email',
-        'password' => 'required|min:8|confirmed',
-    ]);
+    public function resetPassword(Request $request)
+    {
+        $request->validate([
+            'token' => 'required',
+            'email' => 'required|email',
+            'password' => 'required|min:8|confirmed',
+        ]);
 
-    // This is the core logic that was crashing
-    $status = Password::reset(
-        $request->only('email', 'password', 'password_confirmation', 'token'),
-        function ($user, $password) {
-            // Guard against null user
-            if ($user) {
-                $user->forceFill([
-                    'password' => Hash::make($password)
-                ])->setRememberToken(Str::random(60))->save();
+        $status = Password::reset(
+            $request->only('email', 'password', 'password_confirmation', 'token'),
+            function ($user, $password) {
+                // 🛡️ Guard: Only proceed if Laravel actually found a user for this token/email
+                if ($user) {
+                    $user->forceFill([
+                        'password' => Hash::make($password)
+                    ])->setRememberToken(Str::random(60))->save();
+                }
             }
-        }
-    );
+        );
 
-    // If $user was null, $status will not be PASSWORD_RESET
-    return $status === Password::PASSWORD_RESET
-        ? response()->json(['message' => 'Password has been reset successfully.'], 200)
-        : response()->json(['message' => __($status)], 400); 
-}
+        // If $user was null or token expired, $status will be an error string.
+        // We return 400 instead of crashing with 500.
+        return $status === Password::PASSWORD_RESET
+            ? response()->json(['message' => 'Your password has been reset successfully!'], 200)
+            : response()->json(['message' => __($status)], 400); 
+    }
+
     /**
      * 👤 Get the authenticated user
      */
