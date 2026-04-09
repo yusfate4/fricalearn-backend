@@ -26,13 +26,16 @@ use App\Http\Controllers\Api\RewardController;
 | 🔓 Public Routes
 |--------------------------------------------------------------------------
 */
-Route::post('/register', [AuthController::class, 'register']);
-Route::post('/login', [AuthController::class, 'login']);
-Route::get('/public/analytics/{studentId}', [AnalyticsController::class, 'publicStudentStats']);
+Route::prefix('auth')->group(function () {
+    Route::post('/register', [AuthController::class, 'register']);
+    Route::post('/login', [AuthController::class, 'login']);
+    
+    // 🔑 Now these will match /api/auth/forgot-password
+    Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
+    Route::post('/reset-password', [AuthController::class, 'resetPassword']);
+});
 
-// 🔑 PASSWORD RESET ROUTES 
-Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
-Route::post('/reset-password', [AuthController::class, 'resetPassword']);
+Route::get('/public/analytics/{studentId}', [AnalyticsController::class, 'publicStudentStats']);
 
 // 📅 AI Global Schedule (Publicly viewable for timer math)
 Route::get('/ai/active-schedule', [AiController::class, 'getActiveSchedule']);
