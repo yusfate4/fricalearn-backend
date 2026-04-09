@@ -191,4 +191,9 @@ class User extends Authenticatable
         
         return $this->name;
     }
+
+    public function getEmailForPasswordReset()
+{
+    return $this->email;
+}
 }
