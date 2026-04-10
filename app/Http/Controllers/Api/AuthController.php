@@ -124,37 +124,44 @@ class AuthController extends Controller
  */
 public function resetPassword(Request $request)
 {
-    try {
-        $request->validate([
-            'token' => 'required',
-            'email' => 'required|email',
-            'password' => 'required|min:8|confirmed',
-        ]);
+    // 1. Validate the incoming request
+    $validator = Validator::make($request->all(), [
+        'token' => 'required',
+        'email' => 'required|email',
+        'password' => 'required|min:8|confirmed',
+    ]);
 
-        $status = Password::reset(
-            $request->only('email', 'password', 'password_confirmation', 'token'),
-            function ($user, $password) {
-                if ($user) {
-                    $user->forceFill([
-                        'password' => Hash::make($password)
-                    ])->setRememberToken(Str::random(60))->save();
-                }
-            }
-        );
-
-        return $status === Password::PASSWORD_RESET
-            ? response()->json(['message' => 'Your password has been reset successfully!'], 200)
-            : response()->json(['message' => __($status)], 400);
-
-    } catch (\Exception $e) {
-        // This captures the error and returns it so we can see it in the browser
-        return response()->json([
-            'message' => 'An unexpected error occurred.',
-            'error' => $e->getMessage()
-        ], 500);
+    if ($validator->fails()) {
+        return response()->json(['message' => $validator->errors()->first()], 422);
     }
-}
 
+    // 2. Attempt the reset
+    // We use a variable to track if the closure actually ran
+    $userUpdated = false;
+
+    $status = Password::reset(
+        $request->only('email', 'password', 'password_confirmation', 'token'),
+        function ($user, $password) use (&$userUpdated) {
+            if ($user) {
+                $user->forceFill([
+                    'password' => Hash::make($password)
+                ])->setRememberToken(Str::random(60))->save();
+                
+                $userUpdated = true;
+            }
+        }
+    );
+
+    // 3. Return a clean response instead of a crash
+    if ($status === Password::PASSWORD_RESET && $userUpdated) {
+        return response()->json(['message' => 'Your password has been reset successfully!'], 200);
+    }
+
+    // If it reached here, something is wrong (invalid token, expired, etc.)
+    return response()->json([
+        'message' => __($status) // This will say "This password reset token is invalid."
+    ], 400);
+}
 
 /**
      * 👤 Get the authenticated user
