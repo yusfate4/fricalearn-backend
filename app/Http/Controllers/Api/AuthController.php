@@ -119,32 +119,36 @@ class AuthController extends Controller
      * 🔄 Reset Password (The final step)
      * Fixed to prevent "save() on null" 500 errors.
      */
-    public function resetPassword(Request $request)
-    {
-        $request->validate([
-            'token' => 'required',
-            'email' => 'required|email',
-            'password' => 'required|min:8|confirmed',
-        ]);
+   /**
+ * 🔄 Reset Password (The final step)
+ */
+public function resetPassword(Request $request)
+{
+    $request->validate([
+        'token' => 'required',
+        'email' => 'required|email',
+        'password' => 'required|min:8|confirmed',
+    ]);
 
-        $status = Password::reset(
-            $request->only('email', 'password', 'password_confirmation', 'token'),
-            function ($user, $password) {
-                // 🛡️ Guard: Only proceed if Laravel actually found a user for this token/email
-                if ($user) {
-                    $user->forceFill([
-                        'password' => Hash::make($password)
-                    ])->setRememberToken(Str::random(60))->save();
-                }
+    // 🛡️ Passwords::reset returns a status string (e.g., 'passwords.reset' or 'passwords.token')
+    $status = Password::reset(
+        $request->only('email', 'password', 'password_confirmation', 'token'),
+        function ($user, $password) {
+            // Check if user exists before attempting to save
+            if ($user) {
+                $user->forceFill([
+                    'password' => Hash::make($password)
+                ])->setRememberToken(Str::random(60))->save();
             }
-        );
+        }
+    );
 
-        // If $user was null or token expired, $status will be an error string.
-        // We return 400 instead of crashing with 500.
-        return $status === Password::PASSWORD_RESET
-            ? response()->json(['message' => 'Your password has been reset successfully!'], 200)
-            : response()->json(['message' => __($status)], 400); 
-    }
+    // If $status is PASSWORD_RESET, it was successful. Otherwise, it's an error.
+    return $status === Password::PASSWORD_RESET
+        ? response()->json(['message' => 'Your password has been reset successfully!'], 200)
+        : response()->json(['message' => __($status)], 400); 
+}
+
 
     /**
      * 👤 Get the authenticated user
