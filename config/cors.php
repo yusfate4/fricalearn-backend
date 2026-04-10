@@ -19,6 +19,8 @@ return [
     'allowed_methods' => ['*'],
     'allowed_origins' => [
     'https://fricalearn.netlify.app',
+    'https://fricalearn.com',
+    'https://www.fricalearn.com',
     'http://localhost:5173', // 👈 Add this line
     'http://localhost:5174', // This is what was causing the error
 ],
