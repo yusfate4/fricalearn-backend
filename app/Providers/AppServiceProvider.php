@@ -21,15 +21,17 @@ class AppServiceProvider extends ServiceProvider
     /**
      * Bootstrap any application services.
      */
-    public function boot(): void
+   public function boot(): void
     {
         // 0. Namecheap/MySQL Compatibility Fix
-        // This prevents the "Specified key was too long" error
         Schema::defaultStringLength(191);
 
         // 1. Password Reset URL Customization
         ResetPassword::createUrlUsing(function ($user, string $token) {
-            return 'https://fricalearn.netlify.app/reset-password?token='.$token.'&email='.$user->email;
+            // 🚀 THE FIX: Use your official domain instead of Netlify
+            // We use rawurlencode to ensure the @ symbol doesn't break the link
+            $frontendUrl = 'https://fricalearn.com'; 
+            return $frontendUrl . '/reset-password?token=' . $token . '&email=' . rawurlencode($user->email);
         });
 
         // 2. Email Verification Template Customization
