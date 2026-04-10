@@ -84,7 +84,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/switch-to-child/{childId}', [ParentController::class, 'switchToChild']);
         Route::get('/active-student/{id}', [ParentController::class, 'getActiveStudentProfile']);
         Route::get('/child-stats/{childId}', [ParentAnalyticsController::class, 'getChildStats']);
-        Route::post('/payments/submit', [PaymentController::class, 'submitPayment']); 
+        Route::post('/submit-payment', [PaymentController::class, 'submitPayment']);
     });
 
     // 💬 --- CHAT SYSTEM ---
