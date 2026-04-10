@@ -124,33 +124,39 @@ class AuthController extends Controller
  */
 public function resetPassword(Request $request)
 {
-    $request->validate([
-        'token' => 'required',
-        'email' => 'required|email',
-        'password' => 'required|min:8|confirmed',
-    ]);
+    try {
+        $request->validate([
+            'token' => 'required',
+            'email' => 'required|email',
+            'password' => 'required|min:8|confirmed',
+        ]);
 
-    // 🛡️ Passwords::reset returns a status string (e.g., 'passwords.reset' or 'passwords.token')
-    $status = Password::reset(
-        $request->only('email', 'password', 'password_confirmation', 'token'),
-        function ($user, $password) {
-            // Check if user exists before attempting to save
-            if ($user) {
-                $user->forceFill([
-                    'password' => Hash::make($password)
-                ])->setRememberToken(Str::random(60))->save();
+        $status = Password::reset(
+            $request->only('email', 'password', 'password_confirmation', 'token'),
+            function ($user, $password) {
+                if ($user) {
+                    $user->forceFill([
+                        'password' => Hash::make($password)
+                    ])->setRememberToken(Str::random(60))->save();
+                }
             }
-        }
-    );
+        );
 
-    // If $status is PASSWORD_RESET, it was successful. Otherwise, it's an error.
-    return $status === Password::PASSWORD_RESET
-        ? response()->json(['message' => 'Your password has been reset successfully!'], 200)
-        : response()->json(['message' => __($status)], 400); 
+        return $status === Password::PASSWORD_RESET
+            ? response()->json(['message' => 'Your password has been reset successfully!'], 200)
+            : response()->json(['message' => __($status)], 400);
+
+    } catch (\Exception $e) {
+        // This captures the error and returns it so we can see it in the browser
+        return response()->json([
+            'message' => 'An unexpected error occurred.',
+            'error' => $e->getMessage()
+        ], 500);
+    }
 }
 
 
-    /**
+/**
      * 👤 Get the authenticated user
      */
     public function me(Request $request)
