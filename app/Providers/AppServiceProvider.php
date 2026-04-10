@@ -3,9 +3,10 @@
 namespace App\Providers;
 
 use Illuminate\Support\ServiceProvider;
+use Illuminate\Support\Facades\Schema; // 🚀 Added for the Namecheap fix
 use Illuminate\Auth\Notifications\ResetPassword;
-use Illuminate\Auth\Notifications\VerifyEmail; // 🚀 Added
-use Illuminate\Notifications\Messages\MailMessage; // 🚀 Added
+use Illuminate\Auth\Notifications\VerifyEmail;
+use Illuminate\Notifications\Messages\MailMessage;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -22,6 +23,10 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // 0. Namecheap/MySQL Compatibility Fix
+        // This prevents the "Specified key was too long" error
+        Schema::defaultStringLength(191);
+
         // 1. Password Reset URL Customization
         ResetPassword::createUrlUsing(function ($user, string $token) {
             return 'https://fricalearn.netlify.app/reset-password?token='.$token.'&email='.$user->email;
