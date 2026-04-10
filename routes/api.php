@@ -189,10 +189,30 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 });
 
+/*
+|--------------------------------------------------------------------------
+| 📧 THE FIX: Manual Verification to Avoid CORS Redirects
+|--------------------------------------------------------------------------
+*/
 Route::get('/email/verify/{id}/{hash}', function (Request $request) {
-    $frontendUrl = "https://fricalearn.com/verify-email";
-    $query = http_build_query($request->query());
-    return redirect($frontendUrl . '/' . $request->route('id') . '/' . $request->route('hash') . '?' . $query);
+    // 1. Check if the signature is valid
+    if (! $request->hasValidSignature()) {
+        return response()->json(["message" => "Invalid or expired verification link."], 403);
+    }
+
+    $user = \App\Models\User::findOrFail($request->route('id'));
+
+    // 2. Check if already verified
+    if ($user->hasVerifiedEmail()) {
+        return response()->json(["message" => "Email already verified."]);
+    }
+
+    // 3. Mark as verified
+    if ($user->markEmailAsVerified()) {
+        event(new \Illuminate\Auth\Events\Verified($user));
+    }
+
+    return response()->json(["message" => "Email verified successfully!"]);
 })->name('verification.verify');
 
 Route::get('/unauthorized', function () {
