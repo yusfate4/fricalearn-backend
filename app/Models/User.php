@@ -25,6 +25,8 @@ class User extends Authenticatable implements MustVerifyEmail
         'timezone',
         'avatar_url',
         'is_active',
+        'last_login_at',
+        'email_verified_at', // 🚀 Added to fillable for easy manual updates
     ];
 
     /**
@@ -47,6 +49,31 @@ class User extends Authenticatable implements MustVerifyEmail
 
     /*
     |--------------------------------------------------------------------------
+    | Verification Helpers
+    |--------------------------------------------------------------------------
+    */
+
+    /**
+     * Determine if the user has verified their email address.
+     * Overridden to ensure boolean consistency across the app.
+     */
+    public function hasVerifiedEmail()
+    {
+        return ! is_null($this->email_verified_at);
+    }
+
+    /**
+     * Mark the given user's email as verified.
+     */
+    public function markEmailAsVerified()
+    {
+        return $this->forceFill([
+            'email_verified_at' => $this->freshTimestamp(),
+        ])->save();
+    }
+
+    /*
+    |--------------------------------------------------------------------------
     | Student & Tutor Profiles
     |--------------------------------------------------------------------------
     */
@@ -63,29 +90,22 @@ class User extends Authenticatable implements MustVerifyEmail
 
     /*
     |--------------------------------------------------------------------------
-    | Parent & Child Linking Logic (The "Bridge")
+    | Parent & Child Linking Logic
     |--------------------------------------------------------------------------
     */
 
-    /**
-     * RELATIONSHIP: For the Parent to see their Children.
-     * Uses the 'parent_child' pivot table.
-     */
     public function children()
     {
         return $this->belongsToMany(
             User::class,
-            'parent_child', // Pivot table name
-            'parent_id',    // Foreign key for Parent
-            'child_id'      // Foreign key for Child
+            'parent_child', 
+            'parent_id',    
+            'child_id'      
         )
         ->withPivot('relationship')
         ->withTimestamps();
     }
 
-    /**
-     * RELATIONSHIP: For the Child to see their Parent(s).
-     */
     public function parents()
     {
         return $this->belongsToMany(
@@ -173,14 +193,10 @@ class User extends Authenticatable implements MustVerifyEmail
 
     /*
     |--------------------------------------------------------------------------
-    | Accessors (Custom Attributes)
+    | Accessors
     |--------------------------------------------------------------------------
     */
 
-    /**
-     * Returns a professional display name for Admin sidebars.
-     * Example: "Dahud Yusuf (Parent of Sodiq)"
-     */
     public function getAdminDisplayNameAttribute()
     {
         if ($this->role === 'parent') {
@@ -193,8 +209,11 @@ class User extends Authenticatable implements MustVerifyEmail
         return $this->name;
     }
 
+    /**
+     * Get the email address that should be used for password reset.
+     */
     public function getEmailForPasswordReset()
-{
-    return $this->email;
-}
+    {
+        return $this->email;
+    }
 }
