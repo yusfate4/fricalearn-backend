@@ -10,13 +10,22 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\DB;
 use Cloudinary\Cloudinary; 
 
-
 class CourseController extends Controller
 {
     /**
-     * 🎓 Smart Library Index
-     * Handles: /api/courses
+     * 🚀 Helper to get a configured Cloudinary instance
      */
+    private function getCloudinary()
+    {
+        return new Cloudinary([
+            'cloud' => [
+                'cloud_name' => env('CLOUDINARY_CLOUD_NAME'),
+                'api_key'    => env('CLOUDINARY_API_KEY'),
+                'api_secret' => env('CLOUDINARY_API_SECRET'),
+            ],
+        ]);
+    }
+
     public function index(Request $request)
     {
         try {
@@ -119,48 +128,44 @@ class CourseController extends Controller
     /**
      * 🔐 Admin: Store (Cloudinary Integrated)
      */
-   public function store(Request $request)
-{
-    $validated = $request->validate([
-        'title' => 'required|string|max:255|unique:courses',
-        'category' => 'required|string', 
-        'subject' => 'required|string',
-        'level' => 'required|string',
-        'description' => 'required|string',
-        'price_ngn' => 'required|numeric',
-        'price_gbp' => 'required|numeric',
-        'image' => 'required|image|max:5120', 
-    ]);
+ public function store(Request $request)
+    {
+        $validated = $request->validate([
+            'title' => 'required|string|max:255|unique:courses',
+            'category' => 'required|string', 
+            'subject' => 'required|string',
+            'level' => 'required|string',
+            'description' => 'required|string',
+            'price_ngn' => 'required|numeric',
+            'price_gbp' => 'required|numeric',
+            'image' => 'required|image|max:5120', 
+        ]);
 
-    // 🚀 MANUAL INJECTION: Bypass the Service Provider
-   $cloudinary = new Cloudinary([
-        'cloud' => [
-            'cloud_name' => env('CLOUDINARY_CLOUD_NAME'),
-            'api_key'    => env('CLOUDINARY_API_KEY'),
-            'api_secret' => env('CLOUDINARY_API_SECRET'),
-        ],
-    ]);
+        try {
+            $cloudinary = $this->getCloudinary();
+            
+            $upload = $cloudinary->uploadApi()->upload(
+                $request->file('image')->getRealPath(),
+                ['folder' => 'fricalearn/courses']
+            );
+            
+            $uploadedFileUrl = $upload['secure_url'];
 
-    try {
-        // ✅ Notice we call it on the $cloudinary variable we just created
-        $upload = $cloudinary->uploadApi()->upload(
-            $request->file('image')->getRealPath(),
-            ['folder' => 'fricalearn/courses']
-        );
-        
-        $uploadedFileUrl = $upload['secure_url'];
+            // 🛡️ Remove 'image' from array before creating, add 'thumbnail_url'
+            $courseData = $validated;
+            unset($courseData['image']);
 
-        $course = Course::create(array_merge($validated, [
-            'thumbnail_url' => $uploadedFileUrl,
-            'created_by' => auth()->id(),
-            'is_published' => true,
-        ]));
+            $course = Course::create(array_merge($courseData, [
+                'thumbnail_url' => $uploadedFileUrl,
+                'created_by' => auth()->id(),
+                'is_published' => true,
+            ]));
 
-        return response()->json($course, 201);
-    } catch (\Exception $e) {
-        return response()->json(['error' => $e->getMessage()], 500);
+            return response()->json($course, 201);
+        } catch (\Exception $e) {
+            return response()->json(['error' => 'Cloudinary Upload Failed: ' . $e->getMessage()], 500);
+        }
     }
-}
 
     /**
      * 📝 Admin: Update (Cloudinary Integrated)
@@ -168,20 +173,39 @@ class CourseController extends Controller
     public function update(Request $request, $id)
     {
         $course = Course::findOrFail($id);
-        $data = $request->except('image');
+        
+        // Don't validate 'title' as unique if it's the same course
+        $validated = $request->validate([
+            'title' => 'string|max:255|unique:courses,title,' . $id,
+            'category' => 'string',
+            'subject' => 'string',
+            'level' => 'string',
+            'description' => 'string',
+            'price_ngn' => 'numeric',
+            'price_gbp' => 'numeric',
+            'image' => 'nullable|image|max:5120',
+        ]);
 
-        if ($request->hasFile('image')) {
-            // Note: Cloudinary management usually handles replacement, 
-            // but we store the new secure path here.
-            $uploadedFileUrl = Cloudinary::upload($request->file('image')->getRealPath(), [
-                'folder' => 'fricalearn/courses'
-            ])->getSecurePath();
+        try {
+            $data = $request->except('image');
+
+            if ($request->hasFile('image')) {
+                $cloudinary = $this->getCloudinary();
+                
+                $upload = $cloudinary->uploadApi()->upload(
+                    $request->file('image')->getRealPath(),
+                    ['folder' => 'fricalearn/courses']
+                );
+                
+                $data['thumbnail_url'] = $upload['secure_url'];
+            }
+
+            $course->update($data); 
+            return response()->json(['message' => 'Course updated successfully', 'course' => $course]);
             
-            $data['thumbnail_url'] = $uploadedFileUrl;
+        } catch (\Exception $e) {
+            return response()->json(['error' => 'Update Failed: ' . $e->getMessage()], 500);
         }
-
-        $course->update($data); 
-        return response()->json(['message' => 'Course updated successfully', 'course' => $course]);
     }
 
     /**
@@ -190,9 +214,6 @@ class CourseController extends Controller
     public function destroy($id)
     {
         $course = Course::findOrFail($id);
-        
-        // Optional: Add logic here to delete from Cloudinary using Public ID if needed.
-        
         $course->delete();
         return response()->json(['message' => 'Course deleted successfully']);
     }
