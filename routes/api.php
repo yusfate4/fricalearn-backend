@@ -20,6 +20,7 @@ use App\Http\Controllers\Api\Student\AIHintController;
 use App\Http\Controllers\Api\AiController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\RewardController;
+use Illuminate\Support\Facades\Mail;
 
 Route::get('/run-migration-yusuf', function () {
     Artisan::call('migrate --force');
@@ -31,6 +32,29 @@ Route::get('/run-migration-yusuf', function () {
 | 🔓 Public Routes
 |--------------------------------------------------------------------------
 */
+
+Route::post('/contact', function (Request $request) {
+    $data = $request->validate([
+        'name' => 'required|string',
+        'email' => 'required|email',
+        'role' => 'required|string',
+        'message' => 'required|string',
+    ]);
+
+    // Send the email to your official inbox
+    Mail::raw("New Message from FricaLearn Contact Form:\n\n" .
+        "Name: {$data['name']}\n" .
+        "Email: {$data['email']}\n" .
+        "Role: {$data['role']}\n" .
+        "Message: {$data['message']}", function ($message) use ($data) {
+            $message->to('hello@fricalearn.com')
+                    ->subject('New Contact Form Submission: ' . $data['name']);
+    });
+
+    return response()->json(['message' => 'Message sent successfully!']);
+});
+
+
 Route::prefix('auth')->group(function () {
     Route::post('/register', [AuthController::class, 'register']);
     Route::post('/login', [AuthController::class, 'login']);
