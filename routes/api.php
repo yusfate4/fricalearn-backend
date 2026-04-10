@@ -73,7 +73,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/me', [AuthController::class, 'me']);
     Route::post('/logout', [AuthController::class, 'logout']);
 
-    // 👨‍👩‍👧‍👦 --- PARENT PORTAL (Moved outside verified to allow immediate student setup) ---
+    // 👨‍👩‍👧‍👦 --- PARENT PORTAL ---
     Route::prefix('parent')->group(function () {
         Route::get('/dashboard', [ParentController::class, 'getDashboardData']);
         Route::get('/children', [ParentController::class, 'getChildren']);
@@ -84,18 +84,24 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/payments/submit', [PaymentController::class, 'submitPayment']); 
     });
 
-    // 💬 --- CHAT SYSTEM (Parent/Student & Support) ---
+    // 💬 --- CHAT SYSTEM ---
     Route::prefix('chat')->group(function () {
         Route::get('/conversation', [ChatController::class, 'getConversation']);
         Route::post('/message', [ChatController::class, 'sendMessage']);
     });
 
-    // 📊 --- ANALYTICS (Move here to fix Admin Dashboard 403) ---
+    // 📚 --- ACCESSIBLE COURSE DATA ---
+    // Moved out of 'verified' so users can see the catalog immediately.
+    Route::get('/courses', [CourseController::class, 'index']);
+    Route::get('/courses/{id}', [CourseController::class, 'show']);
+    Route::get('/parent/courses', [CourseController::class, 'getParentCourses']);
+
+    // 📊 --- ANALYTICS ---
     Route::get('/analytics', [AnalyticsController::class, 'index']);
 
     /*
     |--------------------------------------------------------------------------
-    | 👑 ADMIN ROUTES (Moved outside verified so you can manage the site)
+    | 👑 ADMIN ROUTES
     |--------------------------------------------------------------------------
     */
     Route::middleware('admin')->prefix('admin')->group(function () {
@@ -153,12 +159,10 @@ Route::middleware('auth:sanctum')->group(function () {
 
     /*
     |----------------------------------------------------------------------
-    | 🛡️ VERIFIED ONLY ROUTES (Restricted to Students for Learning)
+    | 🛡️ VERIFIED ONLY ROUTES
     |----------------------------------------------------------------------
     */
     Route::middleware(['verified'])->group(function () {
-        Route::get('/courses', [CourseController::class, 'index']);
-        Route::get('/courses/{id}', [CourseController::class, 'show']);
         
         Route::prefix('lessons')->group(function () {
             Route::get('/{id}', [LessonController::class, 'show']);
@@ -179,7 +183,6 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::post('/earn', [GamificationController::class, 'earn']);
         });
 
-        Route::get('/parent/courses', [CourseController::class, 'getParentCourses']);
         Route::get('/live-classes', [LiveClassController::class, 'index']);
     });
 });
