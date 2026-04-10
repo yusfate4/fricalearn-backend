@@ -45,112 +45,122 @@ Route::get('/ai/active-schedule', [AiController::class, 'getActiveSchedule']);
 |--------------------------------------------------------------------------
 | 🔐 Protected Routes (Sanctum)
 |--------------------------------------------------------------------------
+| We use auth:sanctum first. Inside, we check for 'verified' email status.
 */
 Route::middleware('auth:sanctum')->group(function () {
 
-    // 👤 --- AUTH & IDENTITY ---
+    // 👤 --- AUTH & IDENTITY (Accessible even if not verified) ---
+    // This allows the React app to check 'email_verified_at' and show a notice.
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/me', [AuthController::class, 'me']);
 
-    // 📚 --- COURSES & LESSONS ---
-    Route::get('/courses', [CourseController::class, 'index']);
-    Route::get('/courses/{id}', [CourseController::class, 'show']);
-    
-    Route::prefix('lessons')->group(function () {
-        Route::get('/{id}', [LessonController::class, 'show']);
-        Route::post('/{id}/complete', [LessonController::class, 'complete']);
-        Route::get('/{id}/questions', [LessonController::class, 'getQuestions']); 
-    });
-
-    // 📊 --- ANALYTICS & AI HELPERS ---
-    Route::get('/student/analytics', [AnalyticsController::class, 'studentStats']);
-    Route::post('/ai/hint', [AIHintController::class, 'getHint']);
-    Route::post('/ai/chat-olu', [AiController::class, 'chatWithOlu']);
-    Route::post('/ai/verify-pronunciation', [AiController::class, 'verifyPronunciation']);
-
-    // 🏆 --- GAMIFICATION (Student View) ---
-    Route::prefix('gamification')->group(function () {
-        Route::get('/leaderboard', [GamificationController::class, 'getLeaderboard']);
-        Route::get('/rewards', [GamificationController::class, 'getRewardsCatalog']);
-        Route::get('/my-rewards', [GamificationController::class, 'getMyRewards']);
-        Route::post('/rewards/{id}/redeem', [GamificationController::class, 'redeemReward']);
-        Route::post('/earn', [GamificationController::class, 'earn']);
-    });
-
-    // 💬 --- CHAT SYSTEM (Student/Parent View) ---
-    Route::prefix('chat')->group(function () {
-        Route::get('/conversation', [ChatController::class, 'getConversation']);
-        Route::post('/message', [ChatController::class, 'sendMessage']);
-    });
-
-    // 👨‍👩‍👧‍👦 --- PARENT PORTAL ---
-    Route::prefix('parent')->group(function () {
-        Route::get('/dashboard', [ParentController::class, 'getDashboardData']);
-        Route::get('/children', [ParentController::class, 'getChildren']);
-        Route::post('/register-child', [ParentController::class, 'registerChild']);
-        Route::post('/switch-to-child/{childId}', [ParentController::class, 'switchToChild']);
-        Route::get('/active-student/{id}', [ParentController::class, 'getActiveStudentProfile']);
-        Route::get('/child-stats/{childId}', [ParentAnalyticsController::class, 'getChildStats']);
-        Route::post('/payments/submit', [PaymentController::class, 'submitPayment']); 
-    });
-
-    Route::get('/parent/courses', [CourseController::class, 'getParentCourses']);
-    Route::get('/live-classes', [LiveClassController::class, 'index']);
-
     /*
-    |--------------------------------------------------------------------------
-    | 👑 ADMIN ROUTES
-    |--------------------------------------------------------------------------
+    |----------------------------------------------------------------------
+    | 🛡️ VERIFIED ONLY ROUTES
+    |----------------------------------------------------------------------
     */
-    Route::middleware('admin')->prefix('admin')->group(function () {
-        Route::get('/stats', [AnalyticsController::class, 'adminStats']);
+    Route::middleware(['verified'])->group(function () {
 
-        Route::prefix('conversations')->group(function () {
-            Route::get('/', [ChatController::class, 'getAdminConversations']); 
-            Route::get('/{id}/messages', [ChatController::class, 'getAdminMessages']); 
-            Route::post('/{id}/read', [ChatController::class, 'markAsRead']);         
-        });
-
-        Route::prefix('courses')->group(function () {
-            Route::get('/', [CourseController::class, 'index']); 
-            Route::post('/', [CourseController::class, 'store']);
-            Route::post('/{id}', [CourseController::class, 'update']); 
-            Route::delete('/{id}', [CourseController::class, 'destroy']);
-        });
-
+        // 📚 --- COURSES & LESSONS ---
+        Route::get('/courses', [CourseController::class, 'index']);
+        Route::get('/courses/{id}', [CourseController::class, 'show']);
+        
         Route::prefix('lessons')->group(function () {
-            Route::get('/', [LessonController::class, 'index']);
-            Route::post('/', [LessonController::class, 'store']);
-            Route::post('/{id}', [LessonController::class, 'update']); 
-            Route::delete('/{id}', [LessonController::class, 'destroy']); 
-            Route::post('/{id}/content', [LessonController::class, 'uploadContent']);
+            Route::get('/{id}', [LessonController::class, 'show']);
+            Route::post('/{id}/complete', [LessonController::class, 'complete']);
+            Route::get('/{id}/questions', [LessonController::class, 'getQuestions']); 
         });
 
-        Route::get('/questions', [QuestionController::class, 'index']); 
-        Route::post('/questions', [QuestionController::class, 'store']);
-        Route::post('/ai/generate-quiz', [AIQuizController::class, 'generate']);
-        Route::post('/update-schedule', [AiController::class, 'updateSchedule']);
+        // 📊 --- ANALYTICS & AI HELPERS ---
+        Route::get('/student/analytics', [AnalyticsController::class, 'studentStats']);
+        Route::post('/ai/hint', [AIHintController::class, 'getHint']);
+        Route::post('/ai/chat-olu', [AiController::class, 'chatWithOlu']);
+        Route::post('/ai/verify-pronunciation', [AiController::class, 'verifyPronunciation']);
 
-        Route::prefix('payments')->group(function () {
-            Route::get('/pending', [PaymentController::class, 'getPendingPayments']);
-            Route::get('/history', [PaymentController::class, 'getPaymentHistory']);
-            Route::post('/{id}/approve', [PaymentController::class, 'approvePayment']);
-            Route::post('/{id}/reject', [PaymentController::class, 'rejectPayment']);
+        // 🏆 --- GAMIFICATION (Student View) ---
+        Route::prefix('gamification')->group(function () {
+            Route::get('/leaderboard', [GamificationController::class, 'getLeaderboard']);
+            Route::get('/rewards', [GamificationController::class, 'getRewardsCatalog']);
+            Route::get('/my-rewards', [GamificationController::class, 'getMyRewards']);
+            Route::post('/rewards/{id}/redeem', [GamificationController::class, 'redeemReward']);
+            Route::post('/earn', [GamificationController::class, 'earn']);
         });
 
-        Route::prefix('rewards')->group(function () {
-            Route::get('/', [RewardController::class, 'index']);       
-            Route::post('/', [RewardController::class, 'store']);
-            Route::post('/{id}', [RewardController::class, 'update']); 
-            Route::delete('/{id}', [RewardController::class, 'destroy']);
+        // 💬 --- CHAT SYSTEM (Student/Parent View) ---
+        Route::prefix('chat')->group(function () {
+            Route::get('/conversation', [ChatController::class, 'getConversation']);
+            Route::post('/message', [ChatController::class, 'sendMessage']);
         });
 
-        Route::get('/redemptions', [GamificationController::class, 'getAllRedemptions']);
-        Route::post('/redemptions/{id}/fulfill', [GamificationController::class, 'fulfillRedemption']);
+        // 👨‍👩‍👧‍👦 --- PARENT PORTAL ---
+        Route::prefix('parent')->group(function () {
+            Route::get('/dashboard', [ParentController::class, 'getDashboardData']);
+            Route::get('/children', [ParentController::class, 'getChildren']);
+            Route::post('/register-child', [ParentController::class, 'registerChild']);
+            Route::post('/switch-to-child/{childId}', [ParentController::class, 'switchToChild']);
+            Route::get('/active-student/{id}', [ParentController::class, 'getActiveStudentProfile']);
+            Route::get('/child-stats/{childId}', [ParentAnalyticsController::class, 'getChildStats']);
+            Route::post('/payments/submit', [PaymentController::class, 'submitPayment']); 
+        });
 
-        Route::post('/live-classes', [LiveClassController::class, 'store']);
-        Route::get('/users', function() {
-            return response()->json(\App\Models\User::with('studentProfile')->get());
+        Route::get('/parent/courses', [CourseController::class, 'getParentCourses']);
+        Route::get('/live-classes', [LiveClassController::class, 'index']);
+
+        /*
+        |--------------------------------------------------------------------------
+        | 👑 ADMIN ROUTES
+        |--------------------------------------------------------------------------
+        */
+        Route::middleware('admin')->prefix('admin')->group(function () {
+            Route::get('/stats', [AnalyticsController::class, 'adminStats']);
+
+            Route::prefix('conversations')->group(function () {
+                Route::get('/', [ChatController::class, 'getAdminConversations']); 
+                Route::get('/{id}/messages', [ChatController::class, 'getAdminMessages']); 
+                Route::post('/{id}/read', [ChatController::class, 'markAsRead']);         
+            });
+
+            Route::prefix('courses')->group(function () {
+                Route::get('/', [CourseController::class, 'index']); 
+                Route::post('/', [CourseController::class, 'store']);
+                Route::post('/{id}', [CourseController::class, 'update']); 
+                Route::delete('/{id}', [CourseController::class, 'destroy']);
+            });
+
+            Route::prefix('lessons')->group(function () {
+                Route::get('/', [LessonController::class, 'index']);
+                Route::post('/', [LessonController::class, 'store']);
+                Route::post('/{id}', [LessonController::class, 'update']); 
+                Route::delete('/{id}', [LessonController::class, 'destroy']); 
+                Route::post('/{id}/content', [LessonController::class, 'uploadContent']);
+            });
+
+            Route::get('/questions', [QuestionController::class, 'index']); 
+            Route::post('/questions', [QuestionController::class, 'store']);
+            Route::post('/ai/generate-quiz', [AIQuizController::class, 'generate']);
+            Route::post('/update-schedule', [AiController::class, 'updateSchedule']);
+
+            Route::prefix('payments')->group(function () {
+                Route::get('/pending', [PaymentController::class, 'getPendingPayments']);
+                Route::get('/history', [PaymentController::class, 'getPaymentHistory']);
+                Route::post('/{id}/approve', [PaymentController::class, 'approvePayment']);
+                Route::post('/{id}/reject', [PaymentController::class, 'rejectPayment']);
+            });
+
+            Route::prefix('rewards')->group(function () {
+                Route::get('/', [RewardController::class, 'index']);       
+                Route::post('/', [RewardController::class, 'store']);
+                Route::post('/{id}', [RewardController::class, 'update']); 
+                Route::delete('/{id}', [RewardController::class, 'destroy']);
+            });
+
+            Route::get('/redemptions', [GamificationController::class, 'getAllRedemptions']);
+            Route::post('/redemptions/{id}/fulfill', [GamificationController::class, 'fulfillRedemption']);
+
+            Route::post('/live-classes', [LiveClassController::class, 'store']);
+            Route::get('/users', function() {
+                return response()->json(\App\Models\User::with('studentProfile')->get());
+            });
         });
     });
 });
@@ -161,7 +171,7 @@ Route::middleware('auth:sanctum')->group(function () {
 |--------------------------------------------------------------------------
 */
 Route::get('/email/verify/{id}/{hash}', function (Request $request) {
-    // This points the email link back to your React Frontend
+    // Points the email link to the React Frontend
     $frontendUrl = "https://fricalearn.com/verify-email";
     $query = http_build_query($request->query());
     return redirect($frontendUrl . '/' . $request->route('id') . '/' . $request->route('hash') . '?' . $query);
