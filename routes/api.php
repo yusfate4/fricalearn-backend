@@ -78,6 +78,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/me', [AuthController::class, 'me']);
 
+
+      // 💬 --- CHAT SYSTEM (Student/Parent View) ---
+        Route::prefix('chat')->group(function () {
+            Route::get('/conversation', [ChatController::class, 'getConversation']);
+            Route::post('/message', [ChatController::class, 'sendMessage']);
+        });
     /*
     |----------------------------------------------------------------------
     | 🛡️ VERIFIED ONLY ROUTES
@@ -110,11 +116,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::post('/earn', [GamificationController::class, 'earn']);
         });
 
-        // 💬 --- CHAT SYSTEM (Student/Parent View) ---
-        Route::prefix('chat')->group(function () {
-            Route::get('/conversation', [ChatController::class, 'getConversation']);
-            Route::post('/message', [ChatController::class, 'sendMessage']);
-        });
+      
 
         // 👨‍👩‍👧‍👦 --- PARENT PORTAL ---
         Route::prefix('parent')->group(function () {
