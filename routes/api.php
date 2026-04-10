@@ -2,6 +2,7 @@
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Artisan;
 
 // --- 🎮 Import All Controllers ---
 use App\Http\Controllers\Api\AuthController;
@@ -20,12 +21,10 @@ use App\Http\Controllers\Api\AiController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\RewardController;
 
-
 Route::get('/run-migration-yusuf', function () {
     Artisan::call('migrate --force');
     return "Migration successful!";
 });
-
 
 /*
 |--------------------------------------------------------------------------
@@ -35,15 +34,11 @@ Route::get('/run-migration-yusuf', function () {
 Route::prefix('auth')->group(function () {
     Route::post('/register', [AuthController::class, 'register']);
     Route::post('/login', [AuthController::class, 'login']);
-    
-    // 🔑 Now these will match /api/auth/forgot-password
     Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
     Route::post('/reset-password', [AuthController::class, 'resetPassword']);
 });
 
 Route::get('/public/analytics/{studentId}', [AnalyticsController::class, 'publicStudentStats']);
-
-// 📅 AI Global Schedule (Publicly viewable for timer math)
 Route::get('/ai/active-schedule', [AiController::class, 'getActiveSchedule']);
 
 /*
@@ -71,7 +66,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/student/analytics', [AnalyticsController::class, 'studentStats']);
     Route::post('/ai/hint', [AIHintController::class, 'getHint']);
     Route::post('/ai/chat-olu', [AiController::class, 'chatWithOlu']);
-    
     Route::post('/ai/verify-pronunciation', [AiController::class, 'verifyPronunciation']);
 
     // 🏆 --- GAMIFICATION (Student View) ---
@@ -97,11 +91,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/switch-to-child/{childId}', [ParentController::class, 'switchToChild']);
         Route::get('/active-student/{id}', [ParentController::class, 'getActiveStudentProfile']);
         Route::get('/child-stats/{childId}', [ParentAnalyticsController::class, 'getChildStats']);
-        Route::post('/submit-payment', [PaymentController::class, 'submitPayment']);
         Route::post('/payments/submit', [PaymentController::class, 'submitPayment']); 
     });
 
-    // Shared Features
     Route::get('/parent/courses', [CourseController::class, 'getParentCourses']);
     Route::get('/live-classes', [LiveClassController::class, 'index']);
 
@@ -111,17 +103,14 @@ Route::middleware('auth:sanctum')->group(function () {
     |--------------------------------------------------------------------------
     */
     Route::middleware('admin')->prefix('admin')->group(function () {
-        
         Route::get('/stats', [AnalyticsController::class, 'adminStats']);
 
-        // 💬 --- ADMIN CHAT MANAGEMENT ---
         Route::prefix('conversations')->group(function () {
             Route::get('/', [ChatController::class, 'getAdminConversations']); 
             Route::get('/{id}/messages', [ChatController::class, 'getAdminMessages']); 
             Route::post('/{id}/read', [ChatController::class, 'markAsRead']);         
         });
 
-        // 🏗️ --- COURSE & LESSON MANAGEMENT ---
         Route::prefix('courses')->group(function () {
             Route::get('/', [CourseController::class, 'index']); 
             Route::post('/', [CourseController::class, 'store']);
@@ -134,18 +123,14 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::post('/', [LessonController::class, 'store']);
             Route::post('/{id}', [LessonController::class, 'update']); 
             Route::delete('/{id}', [LessonController::class, 'destroy']); 
-            
-            // 🚀 THE FIX: New Route for Lesson Content Upload (Videos/PDFs)
             Route::post('/{id}/content', [LessonController::class, 'uploadContent']);
         });
 
-        // 📝 --- QUIZ & AI TOOLS ---
         Route::get('/questions', [QuestionController::class, 'index']); 
         Route::post('/questions', [QuestionController::class, 'store']);
         Route::post('/ai/generate-quiz', [AIQuizController::class, 'generate']);
         Route::post('/update-schedule', [AiController::class, 'updateSchedule']);
 
-        // 💰 --- PAYMENT & SUBSCRIPTION MANAGEMENT ---
         Route::prefix('payments')->group(function () {
             Route::get('/pending', [PaymentController::class, 'getPendingPayments']);
             Route::get('/history', [PaymentController::class, 'getPaymentHistory']);
@@ -153,30 +138,34 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::post('/{id}/reject', [PaymentController::class, 'rejectPayment']);
         });
 
-        // 🎁 --- REWARDS & MARKETPLACE MANAGEMENT ---
-     // In your routes/api.php
         Route::prefix('rewards')->group(function () {
             Route::get('/', [RewardController::class, 'index']);       
             Route::post('/', [RewardController::class, 'store']);
-            
-            // 🚀 THE FIX: Change this from Route::put to Route::post
-            // This allows you to send files via POST directly to the update function
             Route::post('/{id}', [RewardController::class, 'update']); 
-            
             Route::delete('/{id}', [RewardController::class, 'destroy']);
         });
 
-        // 🛒 Fulfillment logic
         Route::get('/redemptions', [GamificationController::class, 'getAllRedemptions']);
         Route::post('/redemptions/{id}/fulfill', [GamificationController::class, 'fulfillRedemption']);
 
-        // 🎥 --- LIVE CLASSES & USER MANAGEMENT ---
         Route::post('/live-classes', [LiveClassController::class, 'store']);
         Route::get('/users', function() {
             return response()->json(\App\Models\User::with('studentProfile')->get());
         });
     });
 });
+
+/*
+|--------------------------------------------------------------------------
+| 📧 THE FIX: Email Verification Route
+|--------------------------------------------------------------------------
+*/
+Route::get('/email/verify/{id}/{hash}', function (Request $request) {
+    // This points the email link back to your React Frontend
+    $frontendUrl = "https://fricalearn.com/verify-email";
+    $query = http_build_query($request->query());
+    return redirect($frontendUrl . '/' . $request->route('id') . '/' . $request->route('hash') . '?' . $query);
+})->name('verification.verify');
 
 /*
 |--------------------------------------------------------------------------
