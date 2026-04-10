@@ -12,11 +12,13 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Auth\Events\Registered; 
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Auth;
 
 class AuthController extends Controller
 {
     /**
-     * 📝 Register a new user with Student Profile logic
+     * 📝 Register a new user
+     * Strategy: We trigger the email but do NOT return a login token.
      */
     public function register(Request $request)
     {
@@ -40,9 +42,9 @@ class AuthController extends Controller
             'role' => $validated['role'],
             'country' => $validated['country'] ?? null,
             'timezone' => 'Africa/Lagos', 
+            'is_active' => true,
         ]);
 
-        // Create student profile if role is student
         if ($user->role === 'student') {
             StudentProfile::create([
                 'user_id' => $user->id,
@@ -53,22 +55,17 @@ class AuthController extends Controller
             ]);
         }
 
-        // 📧 Trigger Email Verification Event
+        // 📧 Trigger Oluko Verification Email
         event(new Registered($user));
 
-        $token = $user->createToken('auth_token')->plainTextToken;
-
-        $loadRelations = $user->role === 'parent' ? ['children'] : ['studentProfile'];
-
         return response()->json([
-            'message' => 'Registration successful! Oluko has sent a verification email.',
-            'user' => $user->load($loadRelations),
-            'token' => $token,
+            'status' => 'success',
+            'message' => 'Registration successful! Oluko has sent a verification link to ' . $user->email . '. Please verify your email to log in.',
         ], 201);
     }
 
     /**
-     * 🔑 Login
+     * 🔑 Login with Verification Gate
      */
     public function login(Request $request)
     {
@@ -79,26 +76,58 @@ class AuthController extends Controller
 
         $user = User::where('email', $request->email)->first();
 
+        // 1. Check Credentials
         if (!$user || !Hash::check($request->password, $user->password)) {
             throw ValidationException::withMessages([
                 'email' => ['The provided credentials are incorrect.'],
             ]);
         }
 
-        if (isset($user->is_active) && !$user->is_active) {
+        // 2. 🛑 THE GATEKEEPER: Check Email Verification
+        if (!$user->hasVerifiedEmail()) {
             return response()->json([
-                'message' => 'Your account is inactive. Please contact support.',
+                'status' => 'unverified',
+                'message' => 'Your email address is not verified.',
+                'email' => $user->email
+            ], 403); 
+        }
+
+        // 3. Check Account Status
+        if (!$user->is_active) {
+            return response()->json([
+                'message' => 'Your account is inactive. Please contact FricaLearn support.',
             ], 403);
         }
 
+        // 4. Update login stats and issue token
         $user->update(['last_login_at' => now()]);
-
         $token = $user->createToken('auth_token')->plainTextToken;
 
         return response()->json([
+            'status' => 'success',
             'user' => $user->load(['studentProfile', 'tutorProfile', 'children.studentProfile']),
             'token' => $token,
         ]);
+    }
+
+    /**
+     * 📩 Resend Verification (New Helper for the "Unverified" Modal)
+     */
+    public function resendVerification(Request $request)
+    {
+        $user = User::where('email', $request->email)->first();
+
+        if (!$user) {
+            return response()->json(['message' => 'User not found.'], 404);
+        }
+
+        if ($user->hasVerifiedEmail()) {
+            return response()->json(['message' => 'Email already verified.']);
+        }
+
+        $user->sendEmailVerificationNotification();
+
+        return response()->json(['message' => 'Verification link resent! Check your inbox.']);
     }
 
     /**
@@ -116,72 +145,51 @@ class AuthController extends Controller
     }
 
     /**
-     * 🔄 Reset Password (The final step)
-     * Fixed to prevent "save() on null" 500 errors.
+     * 🔄 Reset Password
      */
-   /**
- * 🔄 Reset Password (The final step)
- */
-public function resetPassword(Request $request)
-{
-    $request->validate([
-        'token' => 'required',
-        'email' => 'required|email',
-        'password' => 'required|min:8|confirmed',
-    ]);
+    public function resetPassword(Request $request)
+    {
+        $request->validate([
+            'token' => 'required',
+            'email' => 'required|email',
+            'password' => 'required|min:8|confirmed',
+        ]);
 
-    try {
-        $userUpdated = false;
+        try {
+            $userUpdated = false;
 
-        $status = Password::reset(
-            $request->only('email', 'password', 'password_confirmation', 'token'),
-            function ($user, $password) use (&$userUpdated) {
-                // Double check the user exists
-                if (!$user) {
-                    return; 
+            $status = Password::reset(
+                $request->only('email', 'password', 'password_confirmation', 'token'),
+                function ($user, $password) use (&$userUpdated) {
+                    $user->password = Hash::make($password);
+                    $user->setRememberToken(Str::random(60));
+                    $user->save();
+                    $userUpdated = true;
                 }
+            );
 
-                // Update user
-                $user->password = Hash::make($password);
-                $user->setRememberToken(Str::random(60));
-                $user->save();
-                
-                $userUpdated = true;
+            if ($status === Password::PASSWORD_RESET && $userUpdated) {
+                return response()->json(['message' => 'Your password has been reset successfully!'], 200);
             }
-        );
 
-        if ($status === Password::PASSWORD_RESET && $userUpdated) {
-            return response()->json(['message' => 'Your password has been reset successfully!'], 200);
+            return response()->json(['message' => __($status)], 400);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'System Error during reset.',
+                'debug_error' => $e->getMessage()
+            ], 500); 
         }
-
-        return response()->json(['message' => __($status)], 400);
-
-    } catch (\Exception $e) {
-        // 🚀 This will turn a 500 error into a 200 error with the message 
-        // so we can finally SEE what is wrong in the browser.
-        return response()->json([
-            'message' => 'Database or System Error',
-            'debug_error' => $e->getMessage(),
-            'line' => $e->getLine()
-        ], 200); 
     }
-}
 
-/**
-     * 👤 Get the authenticated user
-     */
     public function me(Request $request)
     {
-        $user = $request->user();
-        return response()->json($user->load([
+        return response()->json($request->user()->load([
             'studentProfile', 
             'children.studentProfile'
         ]));
     }
 
-    /**
-     * 🚪 Logout
-     */
     public function logout(Request $request)
     {
         $request->user()->currentAccessToken()->delete();

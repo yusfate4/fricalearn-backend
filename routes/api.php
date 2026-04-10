@@ -57,6 +57,9 @@ Route::prefix('auth')->group(function () {
     Route::post('/login', [AuthController::class, 'login']);
     Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
     Route::post('/reset-password', [AuthController::class, 'resetPassword']);
+    
+    // 🚀 NEW: Public endpoint to resend verification if they missed it
+    Route::post('/resend-verification', [AuthController::class, 'resendVerification']);
 });
 
 Route::get('/public/analytics/{studentId}', [AnalyticsController::class, 'publicStudentStats']);
@@ -69,7 +72,7 @@ Route::get('/ai/active-schedule', [AiController::class, 'getActiveSchedule']);
 */
 Route::middleware('auth:sanctum')->group(function () {
 
-    // 👤 --- AUTH & IDENTITY (Accessible without verification) ---
+    // 👤 --- AUTH & IDENTITY ---
     Route::get('/me', [AuthController::class, 'me']);
     Route::post('/logout', [AuthController::class, 'logout']);
 
@@ -90,8 +93,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/message', [ChatController::class, 'sendMessage']);
     });
 
-    // 📚 --- ACCESSIBLE COURSE DATA ---
-    // Moved out of 'verified' so users can see the catalog immediately.
+    // 📚 --- COURSE DATA ---
     Route::get('/courses', [CourseController::class, 'index']);
     Route::get('/courses/{id}', [CourseController::class, 'show']);
     Route::get('/parent/courses', [CourseController::class, 'getParentCourses']);
@@ -159,7 +161,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     /*
     |----------------------------------------------------------------------
-    | 🛡️ VERIFIED ONLY ROUTES
+    | 🛡️ VERIFIED ONLY ROUTES (Deep learning access)
     |----------------------------------------------------------------------
     */
     Route::middleware(['verified'])->group(function () {
