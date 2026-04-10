@@ -124,43 +124,47 @@ class AuthController extends Controller
  */
 public function resetPassword(Request $request)
 {
-    // 1. Validate the incoming request
-    $validator = Validator::make($request->all(), [
+    $request->validate([
         'token' => 'required',
         'email' => 'required|email',
         'password' => 'required|min:8|confirmed',
     ]);
 
-    if ($validator->fails()) {
-        return response()->json(['message' => $validator->errors()->first()], 422);
-    }
+    try {
+        $userUpdated = false;
 
-    // 2. Attempt the reset
-    // We use a variable to track if the closure actually ran
-    $userUpdated = false;
+        $status = Password::reset(
+            $request->only('email', 'password', 'password_confirmation', 'token'),
+            function ($user, $password) use (&$userUpdated) {
+                // Double check the user exists
+                if (!$user) {
+                    return; 
+                }
 
-    $status = Password::reset(
-        $request->only('email', 'password', 'password_confirmation', 'token'),
-        function ($user, $password) use (&$userUpdated) {
-            if ($user) {
-                $user->forceFill([
-                    'password' => Hash::make($password)
-                ])->setRememberToken(Str::random(60))->save();
+                // Update user
+                $user->password = Hash::make($password);
+                $user->setRememberToken(Str::random(60));
+                $user->save();
                 
                 $userUpdated = true;
             }
+        );
+
+        if ($status === Password::PASSWORD_RESET && $userUpdated) {
+            return response()->json(['message' => 'Your password has been reset successfully!'], 200);
         }
-    );
 
-    // 3. Return a clean response instead of a crash
-    if ($status === Password::PASSWORD_RESET && $userUpdated) {
-        return response()->json(['message' => 'Your password has been reset successfully!'], 200);
+        return response()->json(['message' => __($status)], 400);
+
+    } catch (\Exception $e) {
+        // 🚀 This will turn a 500 error into a 200 error with the message 
+        // so we can finally SEE what is wrong in the browser.
+        return response()->json([
+            'message' => 'Database or System Error',
+            'debug_error' => $e->getMessage(),
+            'line' => $e->getLine()
+        ], 200); 
     }
-
-    // If it reached here, something is wrong (invalid token, expired, etc.)
-    return response()->json([
-        'message' => __($status) // This will say "This password reset token is invalid."
-    ], 400);
 }
 
 /**
