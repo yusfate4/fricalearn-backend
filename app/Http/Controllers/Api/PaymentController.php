@@ -16,11 +16,12 @@ use Cloudinary\Cloudinary;
 // 🚀 NOTIFICATIONS
 use App\Notifications\StudentAccountActivated;
 use App\Notifications\NewPaymentSubmitted;
+use App\Notifications\PaymentReceivedParent; // 👈 Added this
 
 class PaymentController extends Controller
 {
     /**
-     * 💳 Parent: Submit payment and notify Admin
+     * 💳 Parent: Submit payment and notify Admin & Parent
      */
     public function submitPayment(Request $request)
     {
@@ -38,7 +39,6 @@ class PaymentController extends Controller
             return DB::transaction(function () use ($request, $parent) {
                 
                 // 🚀 1. Create/Find Student (Inactive)
-                // Using a safer email generation to avoid duplicates during 500 retries
                 $student = User::firstOrCreate(
                     [
                         'name' => trim($request->child_name), 
@@ -53,7 +53,7 @@ class PaymentController extends Controller
                     ]
                 );
 
-                // ☁️ 2. Cloudinary Upload (Initialized inside to ensure envs are fresh)
+                // ☁️ 2. Cloudinary Upload
                 try {
                     $cloudinary = new Cloudinary([
                         'cloud' => [
@@ -70,7 +70,7 @@ class PaymentController extends Controller
                     $receiptUrl = $upload['secure_url'];
                 } catch (\Exception $e) {
                     Log::error("Cloudinary Upload Error: " . $e->getMessage());
-                    throw new \Exception("Receipt upload failed. Please check file size or Cloudinary config.");
+                    throw new \Exception("Receipt upload failed. Check your connection.");
                 }
 
                 // 📄 3. Create Payment Record
@@ -85,19 +85,26 @@ class PaymentController extends Controller
                     'status'       => 'pending',
                 ]);
 
-                // 🔔 4. Notify Admins
+                // 🔔 4a. NOTIFY ADMINS (Verification Required)
                 $admins = User::where('role', 'admin')->orWhere('is_admin', 1)->get();
                 foreach ($admins as $admin) {
                     try {
                         $admin->notify(new NewPaymentSubmitted($payment));
                     } catch (\Exception $e) {
-                        Log::warning("Admin notification failed: " . $e->getMessage());
+                        Log::warning("Admin email failed but transaction continued: " . $e->getMessage());
                     }
+                }
+
+                // 🔔 4b. NOTIFY PARENT (Peace of Mind)
+                try {
+                    $parent->notify(new PaymentReceivedParent($payment));
+                } catch (\Exception $e) {
+                    Log::warning("Parent email failed but transaction continued: " . $e->getMessage());
                 }
 
                 return response()->json([
                     'status' => 'success',
-                    'message' => 'Receipt submitted successfully! Oluko has notified the Admin for verification.',
+                    'message' => 'Receipt submitted! You and the Admin have been notified.',
                     'payment_id' => $payment->id
                 ], 201);
             });
@@ -111,7 +118,7 @@ class PaymentController extends Controller
     }
 
     /**
-     * ✅ Admin: Approve Payment
+     * ✅ Admin: Approve Payment, Activate Account & Notify Parent
      */
     public function approvePayment(Request $request, $id)
     {
@@ -133,13 +140,13 @@ class PaymentController extends Controller
                 $student->update(['is_active' => 1]);
             }
 
-            // 2. Link Relationship
+            // 2. Link Parent/Child Sync
             $parent = User::find($payment->parent_id);
             if ($parent && $student) {
                 $parent->children()->syncWithoutDetaching([$student->id => ['relationship' => 'Parent']]);
             }
 
-            // 3. Update Payment Status
+            // 3. Update Status
             $payment->update([
                 'status' => 'approved',
                 'approved_at' => now(),
@@ -153,14 +160,14 @@ class PaymentController extends Controller
 
             // 5. Setup Profile
             $course = Course::find($payment->course_id);
-            $trackName = $course ? ($course->title) : 'General'; 
+            $trackName = $course ? ($course->title) : 'General Yoruba'; 
 
             StudentProfile::updateOrCreate(
                 ['user_id' => $student->id],
                 ['learning_language' => $trackName, 'rank' => 'Akeko']
             );
 
-            // 6. Notify Parent
+            // 🚀 6. NOTIFY PARENT WITH LOGIN DETAILS
             if ($parent && $student) {
                 try {
                     $parent->notify(new StudentAccountActivated([
@@ -168,7 +175,7 @@ class PaymentController extends Controller
                         'email' => $student->email
                     ], $trackName));
                 } catch (\Exception $e) {
-                    Log::error("Parent activation notification failed: " . $e->getMessage());
+                    Log::error("Activation notification failed: " . $e->getMessage());
                 }
             }
 
