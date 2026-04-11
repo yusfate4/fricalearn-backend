@@ -100,7 +100,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::prefix('conversations')->group(function () {
             Route::get('/', [ChatController::class, 'getAdminConversations']); 
             Route::get('/{id}/messages', [ChatController::class, 'getAdminMessages']); 
-            Route::post('/{id}/read', [ChatController::class, 'markAsRead']);         
+            Route::post('/{id}/read', [ChatController::class, 'markAsRead']);       
+            Route::post('/chat/message', [ChatController::class, 'sendMessage']);  
         });
 
         /*
