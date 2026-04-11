@@ -2,8 +2,11 @@
 
 namespace App\Models;
 
-use Illuminate\Contracts\Auth\MustVerifyEmail; 
+use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
@@ -26,7 +29,7 @@ class User extends Authenticatable implements MustVerifyEmail
         'avatar_url',
         'is_active',
         'last_login_at',
-        'email_verified_at', // 🚀 Added to fillable for easy manual updates
+        'email_verified_at',
     ];
 
     /**
@@ -47,25 +50,23 @@ class User extends Authenticatable implements MustVerifyEmail
         'is_admin' => 'boolean',
     ];
 
+    /**
+     * Automatically append these attributes to JSON responses.
+     */
+    protected $appends = ['admin_display_name'];
+
     /*
     |--------------------------------------------------------------------------
     | Verification Helpers
     |--------------------------------------------------------------------------
     */
 
-    /**
-     * Determine if the user has verified their email address.
-     * Overridden to ensure boolean consistency across the app.
-     */
-    public function hasVerifiedEmail()
+    public function hasVerifiedEmail(): bool
     {
         return ! is_null($this->email_verified_at);
     }
 
-    /**
-     * Mark the given user's email as verified.
-     */
-    public function markEmailAsVerified()
+    public function markEmailAsVerified(): bool
     {
         return $this->forceFill([
             'email_verified_at' => $this->freshTimestamp(),
@@ -74,16 +75,16 @@ class User extends Authenticatable implements MustVerifyEmail
 
     /*
     |--------------------------------------------------------------------------
-    | Student & Tutor Profiles
+    | Staff & Student Profiles
     |--------------------------------------------------------------------------
     */
 
-    public function studentProfile()
+    public function studentProfile(): HasOne
     {
         return $this->hasOne(StudentProfile::class);
     }
 
-    public function tutorProfile()
+    public function tutorProfile(): HasOne
     {
         return $this->hasOne(TutorProfile::class);
     }
@@ -94,28 +95,18 @@ class User extends Authenticatable implements MustVerifyEmail
     |--------------------------------------------------------------------------
     */
 
-    public function children()
+    public function children(): BelongsToMany
     {
-        return $this->belongsToMany(
-            User::class,
-            'parent_child', 
-            'parent_id',    
-            'child_id'      
-        )
-        ->withPivot('relationship')
-        ->withTimestamps();
+        return $this->belongsToMany(User::class, 'parent_child', 'parent_id', 'child_id')
+            ->withPivot('relationship')
+            ->withTimestamps();
     }
 
-    public function parents()
+    public function parents(): BelongsToMany
     {
-        return $this->belongsToMany(
-            User::class,
-            'parent_child',
-            'child_id',
-            'parent_id'
-        )
-        ->withPivot('relationship')
-        ->withTimestamps();
+        return $this->belongsToMany(User::class, 'parent_child', 'child_id', 'parent_id')
+            ->withPivot('relationship')
+            ->withTimestamps();
     }
 
     /*
@@ -124,22 +115,22 @@ class User extends Authenticatable implements MustVerifyEmail
     |--------------------------------------------------------------------------
     */
 
-    public function enrollments()
+    public function enrollments(): HasMany
     {
         return $this->hasMany(CourseEnrollment::class, 'student_id');
     }
 
-    public function progressRecords()
+    public function progressRecords(): HasMany
     {
         return $this->hasMany(ProgressRecord::class, 'user_id');
     }
 
-    public function quizAttempts()
+    public function quizAttempts(): HasMany
     {
         return $this->hasMany(QuizAttempt::class, 'student_id');
     }
 
-    public function pointsHistory()
+    public function pointsHistory(): HasMany
     {
         return $this->hasMany(PointsHistory::class, 'student_id');
     }
@@ -155,6 +146,19 @@ class User extends Authenticatable implements MustVerifyEmail
         return (bool)$this->is_admin || $this->role === 'admin';
     }
 
+    public function isTutor(): bool
+    {
+        return $this->role === 'tutor';
+    }
+
+    /**
+     * Check if user is either an Admin or a Tutor (Staff access).
+     */
+    public function isStaff(): bool
+    {
+        return $this->isAdmin() || $this->isTutor();
+    }
+
     public function isStudent(): bool
     {
         return $this->role === 'student';
@@ -165,14 +169,9 @@ class User extends Authenticatable implements MustVerifyEmail
         return $this->role === 'parent';
     }
 
-    public function isTutor(): bool
-    {
-        return $this->role === 'tutor';
-    }
-
     /*
     |--------------------------------------------------------------------------
-    | Scopes
+    | Scopes & Accessors
     |--------------------------------------------------------------------------
     */
 
@@ -191,13 +190,7 @@ class User extends Authenticatable implements MustVerifyEmail
         return $query->where('is_active', true);
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Accessors
-    |--------------------------------------------------------------------------
-    */
-
-    public function getAdminDisplayNameAttribute()
+    public function getAdminDisplayNameAttribute(): string
     {
         if ($this->role === 'parent') {
             $childrenNames = $this->children->pluck('name')->implode(', ');
@@ -209,10 +202,7 @@ class User extends Authenticatable implements MustVerifyEmail
         return $this->name;
     }
 
-    /**
-     * Get the email address that should be used for password reset.
-     */
-    public function getEmailForPasswordReset()
+    public function getEmailForPasswordReset(): string
     {
         return $this->email;
     }

@@ -24,21 +24,14 @@ use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\RewardController;
 use App\Http\Controllers\Api\AdminScheduleController;
 
-// 🚀 New unique name to bypass Namecheap cache
+// 🚀 THE YUSUF MIGRATION TOOL (Bypass Cache)
 Route::get('/force-migrate-7788', function () {
-    // Force a fresh start
-    \Artisan::call('config:clear');
-    \Artisan::call('route:clear'); 
-
+    Artisan::call('config:clear');
+    Artisan::call('route:clear'); 
     try {
-        \Artisan::call('migrate', ['--force' => true]);
-        $output = \Artisan::output();
-        
-        // This MUST stop the execution
-        return response()->json([
-            'status' => 'Migration Attempted',
-            'output' => $output ?: 'Already up to date'
-        ]);
+        Artisan::call('migrate', ['--force' => true]);
+        $output = Artisan::output();
+        return response()->json(['status' => 'Migration Attempted', 'output' => $output ?: 'Already up to date']);
     } catch (\Exception $e) {
         return response()->json(['error' => $e->getMessage()]);
     }
@@ -51,21 +44,12 @@ Route::get('/force-migrate-7788', function () {
 */
 Route::post('/contact', function (Request $request) {
     $data = $request->validate([
-        'name' => 'required|string',
-        'email' => 'required|email',
-        'role' => 'required|string',
-        'message' => 'required|string',
+        'name' => 'required|string', 'email' => 'required|email',
+        'role' => 'required|string', 'message' => 'required|string',
     ]);
-
-    Mail::raw("New Message from FricaLearn Contact Form:\n\n" .
-        "Name: {$data['name']}\n" .
-        "Email: {$data['email']}\n" .
-        "Role: {$data['role']}\n" .
-        "Message: {$data['message']}", function ($message) use ($data) {
-            $message->to('hello@fricalearn.com')
-                    ->subject('New Contact Form Submission: ' . $data['name']);
+    Mail::raw("New Message from FricaLearn:\n\nName: {$data['name']}\nEmail: {$data['email']}\nRole: {$data['role']}\nMessage: {$data['message']}", function ($message) use ($data) {
+            $message->to('hello@fricalearn.com')->subject('New Contact Form Submission: ' . $data['name']);
     });
-
     return response()->json(['message' => 'Message sent successfully!']);
 });
 
@@ -78,8 +62,6 @@ Route::prefix('auth')->group(function () {
 });
 
 Route::get('/public/analytics/{studentId}', [AnalyticsController::class, 'publicStudentStats']);
-
-// 📅 CLASS SCHEDULE (Public/Authenticated mix)
 Route::get('/ai/active-schedule', [AdminScheduleController::class, 'getActiveSchedule']);
 
 /*
@@ -92,49 +74,24 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/me', [AuthController::class, 'me']);
     Route::post('/logout', [AuthController::class, 'logout']);
 
-    // 📅 MASTER SCHEDULE (Admin Only)
-    Route::post('/admin/update-schedule', [AdminScheduleController::class, 'updateSchedule']);
-
-    // 👨‍👩‍👧‍👦 --- PARENT PORTAL ---
-    Route::prefix('parent')->group(function () {
-        Route::get('/dashboard', [ParentController::class, 'getDashboardData']);
-        Route::get('/children', [ParentController::class, 'getChildren']);
-        Route::post('/register-child', [ParentController::class, 'registerChild']);
-        Route::post('/switch-to-child/{childId}', [ParentController::class, 'switchToChild']);
-        Route::get('/active-student/{id}', [ParentController::class, 'getActiveStudentProfile']);
-        Route::get('/child-stats/{childId}', [ParentAnalyticsController::class, 'getChildStats']);
-        Route::post('/submit-payment', [PaymentController::class, 'submitPayment']);
-    });
-
-    // 💬 --- CHAT SYSTEM ---
-    Route::prefix('chat')->group(function () {
-        Route::get('/conversation', [ChatController::class, 'getConversation']);
-        Route::post('/message', [ChatController::class, 'sendMessage']);
-    });
-
-    // 📚 --- COURSE DATA ---
-    Route::get('/courses', [CourseController::class, 'index']);
-    Route::get('/courses/{id}', [CourseController::class, 'show']);
-    Route::get('/parent/courses', [CourseController::class, 'getParentCourses']);
-
-    // 📊 --- ANALYTICS ---
-    Route::get('/analytics', [AnalyticsController::class, 'index']);
-
     /*
     |--------------------------------------------------------------------------
-    | 👑 ADMIN ROUTES
+    | 👑 STAFF ROUTES (Admins & Tutors)
     |--------------------------------------------------------------------------
     */
     Route::middleware('admin')->prefix('admin')->group(function () {
-        Route::get('/analytics', [AnalyticsController::class, 'index']);
+        // Shared Dashboard Access
         Route::get('/stats', [AnalyticsController::class, 'adminStats']);
-
-        Route::prefix('conversations')->group(function () {
-            Route::get('/', [ChatController::class, 'getAdminConversations']); 
-            Route::get('/{id}/messages', [ChatController::class, 'getAdminMessages']); 
-            Route::post('/{id}/read', [ChatController::class, 'markAsRead']);         
+        Route::get('/users', function() {
+            return response()->json(\App\Models\User::with('studentProfile')->get());
         });
 
+        // Master Schedule & Live Classes
+        Route::get('/schedule', [AdminScheduleController::class, 'getActiveSchedule']);
+        Route::post('/update-schedule', [AdminScheduleController::class, 'updateSchedule']);
+        Route::post('/live-classes', [LiveClassController::class, 'store']);
+
+        // Content & Curriculum
         Route::prefix('courses')->group(function () {
             Route::get('/', [CourseController::class, 'index']); 
             Route::post('/', [CourseController::class, 'store']);
@@ -150,10 +107,23 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::post('/{id}/content', [LessonController::class, 'uploadContent']);
         });
 
+        // Quiz Builder
         Route::get('/questions', [QuestionController::class, 'index']); 
         Route::post('/questions', [QuestionController::class, 'store']);
         Route::post('/ai/generate-quiz', [AIQuizController::class, 'generate']);
 
+        // Conversations
+        Route::prefix('conversations')->group(function () {
+            Route::get('/', [ChatController::class, 'getAdminConversations']); 
+            Route::get('/{id}/messages', [ChatController::class, 'getAdminMessages']); 
+            Route::post('/{id}/read', [ChatController::class, 'markAsRead']);         
+        });
+
+        /*
+        |------------------------------------------------------------------
+        | ⛔ FOUNDER ONLY (Super Admin)
+        |------------------------------------------------------------------
+        */
         Route::prefix('payments')->group(function () {
             Route::get('/pending', [PaymentController::class, 'getPendingPayments']);
             Route::get('/history', [PaymentController::class, 'getPaymentHistory']);
@@ -161,29 +131,38 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::post('/{id}/reject', [PaymentController::class, 'rejectPayment']);
         });
 
+        Route::get('/redemptions', [GamificationController::class, 'getAllRedemptions']);
+        Route::post('/redemptions/{id}/fulfill', [GamificationController::class, 'fulfillRedemption']);
+        
         Route::prefix('rewards')->group(function () {
             Route::get('/', [RewardController::class, 'index']);       
             Route::post('/', [RewardController::class, 'store']);
             Route::post('/{id}', [RewardController::class, 'update']); 
             Route::delete('/{id}', [RewardController::class, 'destroy']);
         });
+    });
 
-        Route::get('/redemptions', [GamificationController::class, 'getAllRedemptions']);
-        Route::post('/redemptions/{id}/fulfill', [GamificationController::class, 'fulfillRedemption']);
-
-        Route::post('/live-classes', [LiveClassController::class, 'store']);
-        Route::get('/users', function() {
-            return response()->json(\App\Models\User::with('studentProfile')->get());
-        });
+    /*
+    |--------------------------------------------------------------------------
+    | 👨‍👩‍👧‍👦 PARENT PORTAL
+    |--------------------------------------------------------------------------
+    */
+    Route::prefix('parent')->group(function () {
+        Route::get('/dashboard', [ParentController::class, 'getDashboardData']);
+        Route::get('/children', [ParentController::class, 'getChildren']);
+        Route::post('/register-child', [ParentController::class, 'registerChild']);
+        Route::post('/switch-to-child/{childId}', [ParentController::class, 'switchToChild']);
+        Route::get('/active-student/{id}', [ParentController::class, 'getActiveStudentProfile']);
+        Route::get('/child-stats/{childId}', [ParentAnalyticsController::class, 'getChildStats']);
+        Route::post('/submit-payment', [PaymentController::class, 'submitPayment']);
     });
 
     /*
     |----------------------------------------------------------------------
-    | 🛡️ VERIFIED ONLY ROUTES
+    | 🛡️ VERIFIED ONLY ROUTES (Students)
     |----------------------------------------------------------------------
     */
     Route::middleware(['verified'])->group(function () {
-        
         Route::prefix('lessons')->group(function () {
             Route::get('/{id}', [LessonController::class, 'show']);
             Route::post('/{id}/complete', [LessonController::class, 'complete']);
@@ -209,20 +188,14 @@ Route::middleware('auth:sanctum')->group(function () {
 
 /*
 |--------------------------------------------------------------------------
-| 📧 Manual Verification
+| 📧 Verification & Utils
 |--------------------------------------------------------------------------
 */
 Route::get('/email/verify/{id}/{hash}', function (Request $request) {
-    if (! $request->hasValidSignature()) {
-        return response()->json(["message" => "Invalid or expired link."], 403);
-    }
+    if (!$request->hasValidSignature()) return response()->json(["message" => "Invalid link."], 403);
     $user = \App\Models\User::findOrFail($request->route('id'));
-    if ($user->hasVerifiedEmail()) {
-        return response()->json(["message" => "Already verified."]);
-    }
-    if ($user->markEmailAsVerified()) {
-        event(new \Illuminate\Auth\Events\Verified($user));
-    }
+    if ($user->hasVerifiedEmail()) return response()->json(["message" => "Already verified."]);
+    if ($user->markEmailAsVerified()) event(new \Illuminate\Auth\Events\Verified($user));
     return response()->json(["message" => "Email verified!"]);
 })->name('verification.verify');
 
