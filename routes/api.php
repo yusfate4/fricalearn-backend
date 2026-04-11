@@ -147,6 +147,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/register-child', [ParentController::class, 'registerChild']);
         Route::post('/submit-payment', [PaymentController::class, 'submitPayment']);
         Route::get('/child-stats/{childId}', [ParentAnalyticsController::class, 'getChildStats']);
+        Route::get('/courses', [CourseController::class, 'index']);
     });
 
     /*
