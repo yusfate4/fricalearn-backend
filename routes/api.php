@@ -21,6 +21,7 @@ use App\Http\Controllers\Api\Student\AIHintController;
 use App\Http\Controllers\Api\AiController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\RewardController;
+use App\Http\Controllers\Api\AdminScheduleController;
 
 Route::get('/run-migration-yusuf', function () {
     try {
@@ -82,6 +83,9 @@ Route::middleware('auth:sanctum')->group(function () {
     // 👤 --- AUTH & IDENTITY ---
     Route::get('/me', [AuthController::class, 'me']);
     Route::post('/logout', [AuthController::class, 'logout']);
+
+    Route::get('/ai/active-schedule', [AdminScheduleController::class, 'getActiveSchedule']);
+    Route::post('/admin/update-schedule', [AdminScheduleController::class, 'updateSchedule']);
 
     // 👨‍👩‍👧‍👦 --- PARENT PORTAL ---
     Route::prefix('parent')->group(function () {
