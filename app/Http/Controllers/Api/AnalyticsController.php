@@ -1,29 +1,31 @@
 <?php
 
-namespace App\Http\Controllers\Api; // 👈 Moved to Api namespace to match your routes
+namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Models\Question;
 use App\Models\Lesson;
 use App\Models\Course;
+use App\Models\LiveClass;
+use App\Models\StudentProfile;
 use Illuminate\Http\Request;
 
 class AnalyticsController extends Controller
 {
     /**
-     * 1. ADMIN DASHBOARD OVERVIEW
+     * 1. ADMIN DASHBOARD OVERVIEW (Legacy Index)
      * Used for the "Control Room" main stats cards
      */
     public function index() 
     {
         return response()->json([
-            'avg_score' => 88, // Placeholder for now
-            'active_count' => User::where('is_admin', 0)->count(),
+            'avg_score' => 88, 
+            'active_count' => User::where('role', 'student')->count(),
             'completed_count' => 15,
             'total_lessons' => Lesson::count(),
             'total_courses' => Course::count(),
-            'recent_students' => User::where('is_admin', 0)
+            'recent_students' => User::where('role', 'student')
                 ->with('studentProfile')
                 ->latest()
                 ->take(5)
@@ -32,35 +34,24 @@ class AnalyticsController extends Controller
     }
 
     /**
-     * 2. DETAILED STUDENT STATS (Private)
-     * Used by Student Portal & Admin User Registry
-     */
-  /**
-     * 2. DETAILED STUDENT STATS (Refined for Parent Impersonation)
-     * Used by Student Portal & Parents viewing as Students
+     * 2. DETAILED STUDENT STATS
+     * Refined for Student Portal & Parent Impersonation
      */
     public function studentStats(Request $request, $userId = null)
     {
         $user = $request->user();
-        
-        // 🚀 THE SWITCHER LOGIC
-        // 1. If an Admin passes an ID in the URL, use that.
-        // 2. If a Parent sends the 'X-Active-Student-Id' header, use that.
-        // 3. Otherwise, use the logged-in user's own ID (Standard Student login).
-        
         $headerStudentId = $request->header('X-Active-Student-Id');
         
-        if ($userId && $user->is_admin) {
+        // Determing Target ID
+        if ($userId && ($user->role === 'admin' || $user->is_admin == 1)) {
             $targetId = $userId;
         } elseif ($headerStudentId && $user->role === 'parent') {
-            // 🔒 Security: Verify this student is actually linked to this parent
             $isChild = $user->children()->where('child_id', $headerStudentId)->exists();
             $targetId = $isChild ? $headerStudentId : $user->id;
         } else {
             $targetId = $user->id;
         }
 
-        // Fetch the data for the determined Target ID
         $student = User::with(['studentProfile', 'progressRecords.lesson'])->findOrFail($targetId);
 
         return response()->json([
@@ -76,9 +67,9 @@ class AnalyticsController extends Controller
                 ->get()
         ]);
     }
+
     /**
-     * 3. PUBLIC STUDENT STATS (For Parents)
-     * No login required, but limited data for privacy
+     * 3. PUBLIC STUDENT STATS (For Shareable Links)
      */
     public function publicStudentStats($studentId)
     {
@@ -93,23 +84,31 @@ class AnalyticsController extends Controller
             'recent_activity' => $user->progressRecords()
                 ->with('lesson')
                 ->latest()
-                ->take(3) // Parents only see top 3 latest achievements
+                ->take(3)
                 ->get()
         ]);
     }
 
+    /**
+     * 4. GLOBAL STAFF STATS
+     * Used by both AdminDashboard and TutorDashboard
+     */
     public function adminStats()
-{
-    // Ensure only admins can see this
-    if (!auth()->user()->is_admin) {
-        return response()->json(['message' => 'Unauthorized'], 403);
-    }
+    {
+        // 🚀 THE FIX: Allow both Admins AND Tutors
+        $user = auth()->user();
+        $isStaff = $user->role === 'admin' || $user->role === 'tutor' || (int)$user->is_admin === 1;
 
-    return response()->json([
-        'total_students' => \App\Models\User::where('is_admin', 0)->count(),
-        'total_courses'  => \App\Models\Course::count(),
-        'total_lessons'  => \App\Models\Lesson::count(),
-        'total_coins'    => \App\Models\StudentProfile::sum('total_coins'),
-    ]);
-}
+        if (!$isStaff) {
+            return response()->json(['message' => 'Unauthorized Staff Access Only'], 403);
+        }
+
+        return response()->json([
+            'total_students'      => User::where('role', 'student')->count(),
+            'total_courses'       => Course::count(),
+            'total_lessons'       => Lesson::count(),
+            'total_live_classes'  => LiveClass::count(), // 👈 Added for Tutor Dashboard
+            'total_coins'         => StudentProfile::sum('total_coins') ?? 0,
+        ]);
+    }
 }
