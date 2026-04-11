@@ -26,38 +26,33 @@ use App\Http\Controllers\Api\AdminScheduleController;
 
 /*
 |--------------------------------------------------------------------------
-| 🚀 THE YUSUF MIGRATION TOOL (Force Sync)
+| 🚀 THE YUSUF MIGRATION TOOL (Nuclear Version)
 |--------------------------------------------------------------------------
 */
 Route::get('/run-migration-yusuf', function () {
-    try {
-        // 1. Force clear the config and cache so Laravel re-scans the migrations folder
-        Artisan::call('config:clear');
-        Artisan::call('cache:clear');
+    // 1. Force clear cache immediately
+    Artisan::call('config:clear');
+    Artisan::call('cache:clear');
 
-        // 2. Run the migration with --force for production
+    // 2. Attempt Migration
+    try {
         Artisan::call('migrate', ['--force' => true]);
-        
         $output = Artisan::output();
         
-        // 3. Explicitly return a view-style response to stop any auto-redirects
-        return response("
-            <div style='font-family:sans-serif; padding:50px; background:#f9f9f9; min-height:100vh;'>
-                <h1 style='color:#2D5A27;'>🛠️ Migration Engine</h1>
-                <hr style='border:1px solid #ddd'>
-                <p><strong>System Status:</strong> Migration attempt completed.</p>
-                <div style='background:#1e1e1e; color:#00ff00; padding:20px; border-radius:10px; overflow-x:auto;'>
-                    <pre>" . ($output ?: 'Nothing to migrate (Database is already up to date).') . "</pre>
-                </div>
-                <br>
-                <a href='/dashboard' style='display:inline-block; padding:10px 20px; background:#2D5A27; color:white; text-decoration:none; border-radius:5px;'>Back to Dashboard</a>
-            </div>
-        ", 200)->header('Content-Type', 'text/html');
-
+        // 3. STOP EVERYTHING AND SHOW THE RESULT
+        dd([
+            'Status' => 'Success',
+            'Message' => 'Migration engine completed.',
+            'Output' => $output ?: 'Nothing to migrate - DB is current.'
+        ]);
     } catch (\Exception $e) {
-        return response("<h1>Migration Failed</h1><pre>{$e->getMessage()}</pre>", 500);
+        dd([
+            'Status' => 'Error',
+            'Error' => $e->getMessage()
+        ]);
     }
 });
+
 
 /*
 |--------------------------------------------------------------------------
