@@ -3,8 +3,6 @@
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\Mail;
-use Illuminate\Support\Facades\DB;
 
 // --- 🎮 Controllers ---
 use App\Http\Controllers\Api\AuthController;
@@ -18,7 +16,6 @@ use App\Http\Controllers\Api\ChatController;
 use App\Http\Controllers\Api\AnalyticsController; 
 use App\Http\Controllers\Api\ParentAnalyticsController; 
 use App\Http\Controllers\Api\Admin\AIQuizController;
-use App\Http\Controllers\Api\Student\AIHintController;
 use App\Http\Controllers\Api\AiController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\RewardController;
@@ -61,11 +58,16 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/me', [AuthController::class, 'me']);
     Route::post('/logout', [AuthController::class, 'logout']);
 
+    // 🚀 THE CHAT FIX: Standardizing the message route for all roles
+    Route::prefix('chat')->group(function () {
+        Route::post('/message', [ChatController::class, 'sendMessage']); // Fixes 404
+        Route::get('/conversations', [ChatController::class, 'getConversations']);
+        Route::get('/messages/{receiverId}', [ChatController::class, 'getMessages']);
+    });
+
     /*
     |--------------------------------------------------------------------------
     | 👑 STAFF ROUTES (Admins & Tutors)
-    |--------------------------------------------------------------------------
-    | These routes use the 'admin' middleware which we updated to allow Tutors.
     |--------------------------------------------------------------------------
     */
     Route::middleware('admin')->prefix('admin')->group(function () {
@@ -74,21 +76,28 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/tutor-profile', [AuthController::class, 'getTutorProfile']);
         Route::post('/tutor-profile', [AuthController::class, 'updateTutorProfile']);
 
-        // Dashboard & User List
+        // 📊 Analytics & Stats
+        Route::get('/analytics', [AnalyticsController::class, 'index']); // Fixes 404
         Route::get('/stats', [AnalyticsController::class, 'adminStats']);
         Route::get('/users', function() {
-            return response()->json(\App\Models\User::with('studentProfile')->get());
+            return response()->json(\App\Models\User::where('role', 'student')->with('studentProfile')->get());
         });
 
         // Master Schedule & Live Classes
         Route::get('/schedule', [AdminScheduleController::class, 'getActiveSchedule']);
         Route::post('/update-schedule', [AdminScheduleController::class, 'updateSchedule']);
         Route::get('/live-classes', [LiveClassController::class, 'index']);
+        Route::get('/live-classes/admin-data', [LiveClassController::class, 'adminData']);
         Route::post('/live-classes', [LiveClassController::class, 'store']);
+        Route::delete('/live-classes/{id}', [LiveClassController::class, 'destroy']);
 
         // Content Management
         Route::apiResource('courses', CourseController::class)->except(['show']);
-        Route::apiResource('lessons', LessonController::class);
+        Route::get('/lessons', [LessonController::class, 'index']);
+        Route::post('/lessons', [LessonController::class, 'store']);
+        Route::get('/lessons/{id}', [LessonController::class, 'show']);
+        Route::put('/lessons/{id}', [LessonController::class, 'update']);
+        Route::delete('/lessons/{id}', [LessonController::class, 'destroy']);
         Route::post('/lessons/{id}/content', [LessonController::class, 'uploadContent']);
 
         // Quiz Builder
@@ -96,17 +105,12 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/questions', [QuestionController::class, 'store']);
         Route::post('/ai/generate-quiz', [AIQuizController::class, 'generate']);
 
-        // Conversations (Admin side)
-        Route::prefix('conversations')->group(function () {
-            Route::get('/', [ChatController::class, 'getAdminConversations']); 
-            Route::get('/{id}/messages', [ChatController::class, 'getAdminMessages']); 
-            Route::post('/{id}/read', [ChatController::class, 'markAsRead']);       
-            Route::post('/chat/message', [ChatController::class, 'sendMessage']);  
-        });
+        // Staff Inbox
+        Route::get('/chats', [ChatController::class, 'getAdminConversations']);
 
         /*
         |------------------------------------------------------------------
-        | ⛔ FOUNDER ONLY (Strict Admin Checks inside Controllers)
+        | ⛔ FOUNDER ONLY (SuperAdmin)
         |------------------------------------------------------------------
         */
         Route::prefix('payments')->group(function () {
