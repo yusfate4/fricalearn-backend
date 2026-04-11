@@ -23,8 +23,15 @@ use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\RewardController;
 
 Route::get('/run-migration-yusuf', function () {
-    Artisan::call('migrate --force');
-    return "Migration successful!";
+    try {
+        // Run the migrations
+        Artisan::call('migrate', ['--force' => true]);
+        
+        // Return the output so you can see it on your screen
+        return "<pre>" . Artisan::output() . "</pre><br><a href='/dashboard'>Go to Dashboard</a>";
+    } catch (\Exception $e) {
+        return "Migration failed: " . $e->getMessage();
+    }
 });
 
 /*
