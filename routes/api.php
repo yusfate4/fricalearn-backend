@@ -24,35 +24,25 @@ use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\RewardController;
 use App\Http\Controllers\Api\AdminScheduleController;
 
-/*
-|--------------------------------------------------------------------------
-| 🚀 THE YUSUF MIGRATION TOOL (Nuclear Version)
-|--------------------------------------------------------------------------
-*/
-Route::get('/run-migration-yusuf', function () {
-    // 1. Force clear cache immediately
-    Artisan::call('config:clear');
-    Artisan::call('cache:clear');
+// 🚀 New unique name to bypass Namecheap cache
+Route::get('/force-migrate-7788', function () {
+    // Force a fresh start
+    \Artisan::call('config:clear');
+    \Artisan::call('route:clear'); 
 
-    // 2. Attempt Migration
     try {
-        Artisan::call('migrate', ['--force' => true]);
-        $output = Artisan::output();
+        \Artisan::call('migrate', ['--force' => true]);
+        $output = \Artisan::output();
         
-        // 3. STOP EVERYTHING AND SHOW THE RESULT
-        dd([
-            'Status' => 'Success',
-            'Message' => 'Migration engine completed.',
-            'Output' => $output ?: 'Nothing to migrate - DB is current.'
+        // This MUST stop the execution
+        return response()->json([
+            'status' => 'Migration Attempted',
+            'output' => $output ?: 'Already up to date'
         ]);
     } catch (\Exception $e) {
-        dd([
-            'Status' => 'Error',
-            'Error' => $e->getMessage()
-        ]);
+        return response()->json(['error' => $e->getMessage()]);
     }
 });
-
 
 /*
 |--------------------------------------------------------------------------
