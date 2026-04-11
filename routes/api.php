@@ -83,6 +83,7 @@ Route::middleware('auth:sanctum')->group(function () {
         // Master Schedule & Live Classes
         Route::get('/schedule', [AdminScheduleController::class, 'getActiveSchedule']);
         Route::post('/update-schedule', [AdminScheduleController::class, 'updateSchedule']);
+        Route::get('/live-classes', [LiveClassController::class, 'index']);
         Route::post('/live-classes', [LiveClassController::class, 'store']);
 
         // Content Management
