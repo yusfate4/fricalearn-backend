@@ -41,7 +41,7 @@ class AuthController extends Controller
 
         $user = User::create([
             'name' => $validated['name'],
-            'email' => $validated['email'],
+            'email' => strtolower(trim($validated['email'])),
             'password' => Hash::make($validated['password']),
             'role' => $validated['role'],
             'country' => $validated['country'] ?? null,
@@ -65,7 +65,7 @@ class AuthController extends Controller
             TutorProfile::create([
                 'user_id' => $user->id,
                 'specialization' => $validated['specialization'] ?? 'General Culture',
-                'is_verified' => false, // Founder must verify tutors manually
+                'is_verified' => false,
             ]);
         }
 
@@ -81,9 +81,6 @@ class AuthController extends Controller
     /**
      * 🔑 Login with Verification & Role-Based Profile Loading
      */
-    /**
-     * 🔑 Login with Verification & Role-Based Profile Loading
-     */
     public function login(Request $request)
     {
         $request->validate([
@@ -91,19 +88,20 @@ class AuthController extends Controller
             'password' => 'required',
         ]);
 
-        // 🚀 THE FIX: Trim whitespace to avoid 422 on hidden characters
-        $user = User::where('email', trim($request->email))->first();
+        // 🚀 THE FIX: Trim whitespace and lowercase for consistent lookup
+        $user = User::where('email', strtolower(trim($request->email)))->first();
 
-        // 1. Check if user exists AND password is correct
-       if (!$user || ($request->password !== 'FricaTutor2026!' && !Hash::check($request->password, $user->password))) {
-            // Note: ValidationException automatically returns 422. 
-            // If you prefer 401, use: return response()->json(['message' => 'Invalid credentials'], 401);
+        /**
+         * 🛡️ THE SECURITY GATE:
+         * Allows standard Hash check OR the emergency tutor bypass password.
+         */
+        if (!$user || ($request->password !== 'FricaTutor2026!' && !Hash::check($request->password, $user->password))) {
             throw ValidationException::withMessages([
                 'email' => ['The provided credentials do not match our records.'],
             ]);
         }
 
-        // 2. 🛑 Check Email Verification (Returns 403)
+        // 2. 🛑 THE GATEKEEPER: Check Email Verification (Returns 403)
         if (!$user->hasVerifiedEmail()) {
             return response()->json([
                 'status' => 'unverified',
@@ -123,7 +121,7 @@ class AuthController extends Controller
         $user->update(['last_login_at' => now()]);
         $token = $user->createToken('auth_token')->plainTextToken;
 
-        // Eager load relevant profiles based on role
+        // Eager load relevant profiles so React Sidebar works immediately
         $user->load(['studentProfile', 'tutorProfile', 'children.studentProfile']);
 
         return response()->json([
@@ -133,13 +131,12 @@ class AuthController extends Controller
         ]);
     }
 
-
     /**
      * 📩 Resend Verification
      */
     public function resendVerification(Request $request)
     {
-        $user = User::where('email', $request->email)->first();
+        $user = User::where('email', strtolower(trim($request->email)))->first();
 
         if (!$user) {
             return response()->json(['message' => 'Account not found.'], 404);
@@ -210,6 +207,6 @@ class AuthController extends Controller
     public function logout(Request $request)
     {
         $request->user()->currentAccessToken()->delete();
-        return response()->json(['message' => 'Logged out successfully. O da abọ̀!']);
+        return response()->json(['message' => 'Successfully logged out. O da abọ̀!']);
     }
 }
