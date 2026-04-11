@@ -9,9 +9,10 @@ use App\Models\Attachment;
 use App\Models\LessonContent;
 use App\Models\StudentProfile;
 use App\Models\Module;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
-// 🚀 Use the pure Cloudinary SDK to bypass Service Provider errors
+use Illuminate\Support\Facades\DB;
 use Cloudinary\Cloudinary;
 
 class LessonController extends Controller
@@ -39,13 +40,11 @@ class LessonController extends Controller
     }
 
     /**
-     * 🚀 START LESSON: Mark as in_progress
+     * 🚀 START LESSON
      */
     public function start(Request $request, $id)
     {
         $user = $request->user();
-        
-        // 🛡️ Use Child ID if Parent is impersonating
         $targetUserId = $request->header('X-Active-Student-Id') ?: $user->id;
 
         $progress = ProgressRecord::updateOrCreate(
@@ -57,13 +56,11 @@ class LessonController extends Controller
     }
 
     /**
-     * 🚀 COMPLETE LESSON: Award XP and Coins to the Student
+     * 🚀 COMPLETE LESSON: Award XP, Record Completion, and Notify Parent
      */
     public function complete(Request $request, $id)
     {
         $user = $request->user();
-        
-        // 🛡️ Ensure coins go to the Child, not the Parent
         $targetUserId = $request->header('X-Active-Student-Id') ?: $user->id;
 
         $validated = $request->validate([
@@ -79,12 +76,13 @@ class LessonController extends Controller
         $pointsAwarded = $validated['points'] ?? 50;
         $passed = $validated['score'] >= 70;
 
+        // 🏆 1. Update Profile
         $profile->increment('total_points', $pointsAwarded);
-        
         if ($passed) {
             $profile->increment('total_coins', $pointsAwarded);
         }
 
+        // 📊 2. Update Progress Record (General Status)
         $progress = ProgressRecord::updateOrCreate(
             ['user_id' => $targetUserId, 'lesson_id' => $id],
             [
@@ -93,6 +91,22 @@ class LessonController extends Controller
                 'completed_at' => now()
             ]
         );
+
+        // 🔏 3. THE FIX: Record in lesson_completions for the Weekly Digest
+        DB::table('lesson_completions')->updateOrInsert(
+            ['user_id' => $targetUserId, 'lesson_id' => $id],
+            ['created_at' => now(), 'updated_at' => now()]
+        );
+
+        // 🔔 4. Notify Parent (Milestone)
+        $student = User::find($targetUserId);
+        if ($student && $student->parent_id) {
+            $parent = User::find($student->parent_id);
+            if ($parent) {
+                // You can create a 'StudentMilestone' notification later
+                // For now, this ensures the data is ready for the Weekly Digest
+            }
+        }
 
         return response()->json([
             'message'      => $passed ? 'O ku ise! (Well done!)' : 'Keep trying!',
@@ -108,7 +122,8 @@ class LessonController extends Controller
      */
     public function store(Request $request)
     {
-        if (!$request->user()->role === 'admin' && !Number($request->user()->is_admin) === 1) {
+        $isAdmin = auth()->user()->role === 'admin' || (int)auth()->user()->is_admin === 1;
+        if (!$isAdmin) {
             return response()->json(['message' => 'Oda! Admin only.'], 403);
         }
 
@@ -157,71 +172,66 @@ class LessonController extends Controller
     }
 
     /**
-     * 🏗️ UPLOAD LESSON CONTENT (Cloudinary Fixed Method)
+     * 🏗️ UPLOAD CONTENT
      */
     public function uploadContent(Request $request, $id)
-{
-    $isAdmin = auth()->user()->role === 'admin' || Number(auth()->user()->is_admin) === 1;
-    if (!$isAdmin) {
-        return response()->json(['message' => 'Admin only.'], 403);
-    }
-
-    $lesson = Lesson::findOrFail($id);
-    
-    $validated = $request->validate([
-        'file' => 'required|file|max:102400', 
-        'content_type' => 'required|in:video,document,audio,image',
-    ]);
-
-    $cloudinary = new Cloudinary([
-        'cloud' => [
-            'cloud_name' => env('CLOUDINARY_CLOUD_NAME'),
-            'api_key'    => env('CLOUDINARY_API_KEY'),
-            'api_secret' => env('CLOUDINARY_API_SECRET'),
-        ],
-    ]);
-
-    try {
-        $file = $request->file('file');
-        
-        // 🚀 THE FIX: Precise resource types
-        // Images = 'image'
-        // Videos/Audio = 'video'
-        // PDFs/Docs = 'raw'
-        $resourceType = 'auto';
-        if ($validated['content_type'] === 'video' || $validated['content_type'] === 'audio') {
-            $resourceType = 'video';
-        } elseif ($validated['content_type'] === 'document') {
-            $resourceType = 'raw'; 
-        } else {
-            $resourceType = 'image';
+    {
+        $isAdmin = auth()->user()->role === 'admin' || (int)auth()->user()->is_admin === 1;
+        if (!$isAdmin) {
+            return response()->json(['message' => 'Admin only.'], 403);
         }
 
-        $upload = $cloudinary->uploadApi()->upload(
-            $file->getRealPath(),
-            [
-                'folder' => 'fricalearn/lessons',
-                'resource_type' => $resourceType,
-                'access_mode' => 'public', // Force public access
-            ]
-        );
-
-        $content = LessonContent::create([
-            'lesson_id' => $lesson->id,
-            'content_type' => $validated['content_type'],
-            'file_url' => $upload['secure_url'],
+        $lesson = Lesson::findOrFail($id);
+        
+        $validated = $request->validate([
+            'file' => 'required|file|max:102400', 
+            'content_type' => 'required|in:video,document,audio,image',
         ]);
 
-        return response()->json([
-            'message' => 'Material uploaded successfully!',
-            'url' => $upload['secure_url'],
-            'data' => $content
-        ], 201);
+        $cloudinary = new Cloudinary([
+            'cloud' => [
+                'cloud_name' => env('CLOUDINARY_CLOUD_NAME'),
+                'api_key'    => env('CLOUDINARY_API_KEY'),
+                'api_secret' => env('CLOUDINARY_API_SECRET'),
+            ],
+        ]);
 
-    } catch (\Exception $e) {
-        return response()->json(['error' => $e->getMessage()], 500);
+        try {
+            $file = $request->file('file');
+            $resourceType = 'auto';
+            if ($validated['content_type'] === 'video' || $validated['content_type'] === 'audio') {
+                $resourceType = 'video';
+            } elseif ($validated['content_type'] === 'document') {
+                $resourceType = 'raw'; 
+            } else {
+                $resourceType = 'image';
+            }
+
+            $upload = $cloudinary->uploadApi()->upload(
+                $file->getRealPath(),
+                [
+                    'folder' => 'fricalearn/lessons',
+                    'resource_type' => $resourceType,
+                    'access_mode' => 'public',
+                ]
+            );
+
+            $content = LessonContent::create([
+                'lesson_id' => $lesson->id,
+                'content_type' => $validated['content_type'],
+                'file_url' => $upload['secure_url'],
+            ]);
+
+            return response()->json([
+                'message' => 'Material uploaded successfully!',
+                'url' => $upload['secure_url'],
+                'data' => $content
+            ], 201);
+
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
     }
-}
 
     public function update(Request $request, $id)
     {
