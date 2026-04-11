@@ -60,9 +60,10 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // 🚀 THE CHAT FIX: Standardizing the message route for all roles
     Route::prefix('chat')->group(function () {
-        Route::post('/message', [ChatController::class, 'sendMessage']); // Fixes 404
-        Route::get('/conversations', [ChatController::class, 'getConversations']);
-        Route::get('/messages/{receiverId}', [ChatController::class, 'getMessages']);
+        Route::get('/conversations', [ChatController::class, 'getAdminConversations']); 
+    Route::get('/chats', [ChatController::class, 'getAdminConversations']); // Alias for support inbox
+    Route::get('/conversations/{id}/messages', [ChatController::class, 'getAdminMessages']); 
+    Route::post('/conversations/{id}/read', [ChatController::class, 'markAsRead']);
     });
 
     /*
