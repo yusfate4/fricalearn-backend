@@ -58,12 +58,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/me', [AuthController::class, 'me']);
     Route::post('/logout', [AuthController::class, 'logout']);
 
-    // 🚀 THE CHAT FIX: Standardizing the message route for all roles
+    // 🚀 GLOBAL CHAT (Shared between Staff & Students)
     Route::prefix('chat')->group(function () {
-        Route::get('/conversations', [ChatController::class, 'getAdminConversations']); 
-    Route::get('/chats', [ChatController::class, 'getAdminConversations']); // Alias for support inbox
-    Route::get('/conversations/{id}/messages', [ChatController::class, 'getAdminMessages']); 
-    Route::post('/conversations/{id}/read', [ChatController::class, 'markAsRead']);
+        Route::post('/message', [ChatController::class, 'sendMessage']);
+        Route::get('/conversations', [ChatController::class, 'getConversations']);
+        Route::get('/messages/{receiverId}', [ChatController::class, 'getMessages']);
     });
 
     /*
@@ -73,16 +72,22 @@ Route::middleware('auth:sanctum')->group(function () {
     */
     Route::middleware('admin')->prefix('admin')->group(function () {
 
-        // 📝 Tutor Profile Management
-        Route::get('/tutor-profile', [AuthController::class, 'getTutorProfile']);
-        Route::post('/tutor-profile', [AuthController::class, 'updateTutorProfile']);
-
-        // 📊 Analytics & Stats
+        // 📊 Analytics & Dashboard Stats
         Route::get('/analytics', [AnalyticsController::class, 'index']); // Fixes 404
         Route::get('/stats', [AnalyticsController::class, 'adminStats']);
         Route::get('/users', function() {
             return response()->json(\App\Models\User::where('role', 'student')->with('studentProfile')->get());
         });
+
+        // 📝 Staff Profile & Inbox
+        Route::get('/tutor-profile', [AuthController::class, 'getTutorProfile']);
+        Route::post('/tutor-profile', [AuthController::class, 'updateTutorProfile']);
+        
+        // 🚀 THE FIX: Flattened Conversation Routes to match frontend GET /api/admin/conversations
+        Route::get('/conversations', [ChatController::class, 'getAdminConversations']); 
+        Route::get('/chats', [ChatController::class, 'getAdminConversations']);
+        Route::get('/conversations/{id}/messages', [ChatController::class, 'getAdminMessages']); 
+        Route::post('/conversations/{id}/read', [ChatController::class, 'markAsRead']);
 
         // Master Schedule & Live Classes
         Route::get('/schedule', [AdminScheduleController::class, 'getActiveSchedule']);
@@ -106,12 +111,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/questions', [QuestionController::class, 'store']);
         Route::post('/ai/generate-quiz', [AIQuizController::class, 'generate']);
 
-        // Staff Inbox
-        Route::get('/chats', [ChatController::class, 'getAdminConversations']);
-
         /*
         |------------------------------------------------------------------
-        | ⛔ FOUNDER ONLY (SuperAdmin)
+        | ⛔ FOUNDER ONLY (Financials & Inventory)
         |------------------------------------------------------------------
         */
         Route::prefix('payments')->group(function () {
