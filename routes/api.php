@@ -6,7 +6,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\DB;
 
-// --- 🎮 Import All Controllers ---
+// --- 🎮 Controllers ---
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CourseController;
 use App\Http\Controllers\Api\LessonController;
@@ -24,14 +24,13 @@ use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\RewardController;
 use App\Http\Controllers\Api\AdminScheduleController;
 
-// 🚀 THE YUSUF MIGRATION TOOL (Bypass Cache)
+// 🚀 THE YUSUF MIGRATION TOOL
 Route::get('/force-migrate-7788', function () {
     Artisan::call('config:clear');
     Artisan::call('route:clear'); 
     try {
         Artisan::call('migrate', ['--force' => true]);
-        $output = Artisan::output();
-        return response()->json(['status' => 'Migration Attempted', 'output' => $output ?: 'Already up to date']);
+        return response()->json(['status' => 'Migration Attempted', 'output' => Artisan::output() ?: 'Success']);
     } catch (\Exception $e) {
         return response()->json(['error' => $e->getMessage()]);
     }
@@ -42,16 +41,7 @@ Route::get('/force-migrate-7788', function () {
 | 🔓 Public Routes
 |--------------------------------------------------------------------------
 */
-Route::post('/contact', function (Request $request) {
-    $data = $request->validate([
-        'name' => 'required|string', 'email' => 'required|email',
-        'role' => 'required|string', 'message' => 'required|string',
-    ]);
-    Mail::raw("New Message from FricaLearn:\n\nName: {$data['name']}\nEmail: {$data['email']}\nRole: {$data['role']}\nMessage: {$data['message']}", function ($message) use ($data) {
-            $message->to('hello@fricalearn.com')->subject('New Contact Form Submission: ' . $data['name']);
-    });
-    return response()->json(['message' => 'Message sent successfully!']);
-});
+Route::get('/ai/active-schedule', [AdminScheduleController::class, 'getActiveSchedule']);
 
 Route::prefix('auth')->group(function () {
     Route::post('/register', [AuthController::class, 'register']);
@@ -60,9 +50,6 @@ Route::prefix('auth')->group(function () {
     Route::post('/reset-password', [AuthController::class, 'resetPassword']);
     Route::post('/resend-verification', [AuthController::class, 'resendVerification']);
 });
-
-Route::get('/public/analytics/{studentId}', [AnalyticsController::class, 'publicStudentStats']);
-Route::get('/ai/active-schedule', [AdminScheduleController::class, 'getActiveSchedule']);
 
 /*
 |--------------------------------------------------------------------------
@@ -78,13 +65,16 @@ Route::middleware('auth:sanctum')->group(function () {
     |--------------------------------------------------------------------------
     | 👑 STAFF ROUTES (Admins & Tutors)
     |--------------------------------------------------------------------------
+    | These routes use the 'admin' middleware which we updated to allow Tutors.
+    |--------------------------------------------------------------------------
     */
     Route::middleware('admin')->prefix('admin')->group(function () {
 
-    Route::get('/tutor-profile', [AuthController::class, 'getTutorProfile']);
-Route::post('/tutor-profile', [AuthController::class, 'updateTutorProfile']);
+        // 📝 Tutor Profile Management
+        Route::get('/tutor-profile', [AuthController::class, 'getTutorProfile']);
+        Route::post('/tutor-profile', [AuthController::class, 'updateTutorProfile']);
 
-        // Shared Dashboard Access
+        // Dashboard & User List
         Route::get('/stats', [AnalyticsController::class, 'adminStats']);
         Route::get('/users', function() {
             return response()->json(\App\Models\User::with('studentProfile')->get());
@@ -95,28 +85,17 @@ Route::post('/tutor-profile', [AuthController::class, 'updateTutorProfile']);
         Route::post('/update-schedule', [AdminScheduleController::class, 'updateSchedule']);
         Route::post('/live-classes', [LiveClassController::class, 'store']);
 
-        // Content & Curriculum
-        Route::prefix('courses')->group(function () {
-            Route::get('/', [CourseController::class, 'index']); 
-            Route::post('/', [CourseController::class, 'store']);
-            Route::post('/{id}', [CourseController::class, 'update']); 
-            Route::delete('/{id}', [CourseController::class, 'destroy']);
-        });
-
-        Route::prefix('lessons')->group(function () {
-            Route::get('/', [LessonController::class, 'index']);
-            Route::post('/', [LessonController::class, 'store']);
-            Route::post('/{id}', [LessonController::class, 'update']); 
-            Route::delete('/{id}', [LessonController::class, 'destroy']); 
-            Route::post('/{id}/content', [LessonController::class, 'uploadContent']);
-        });
+        // Content Management
+        Route::apiResource('courses', CourseController::class)->except(['show']);
+        Route::apiResource('lessons', LessonController::class);
+        Route::post('/lessons/{id}/content', [LessonController::class, 'uploadContent']);
 
         // Quiz Builder
         Route::get('/questions', [QuestionController::class, 'index']); 
         Route::post('/questions', [QuestionController::class, 'store']);
         Route::post('/ai/generate-quiz', [AIQuizController::class, 'generate']);
 
-        // Conversations
+        // Conversations (Admin side)
         Route::prefix('conversations')->group(function () {
             Route::get('/', [ChatController::class, 'getAdminConversations']); 
             Route::get('/{id}/messages', [ChatController::class, 'getAdminMessages']); 
@@ -125,7 +104,7 @@ Route::post('/tutor-profile', [AuthController::class, 'updateTutorProfile']);
 
         /*
         |------------------------------------------------------------------
-        | ⛔ FOUNDER ONLY (Super Admin)
+        | ⛔ FOUNDER ONLY (Strict Admin Checks inside Controllers)
         |------------------------------------------------------------------
         */
         Route::prefix('payments')->group(function () {
@@ -135,14 +114,13 @@ Route::post('/tutor-profile', [AuthController::class, 'updateTutorProfile']);
             Route::post('/{id}/reject', [PaymentController::class, 'rejectPayment']);
         });
 
-        Route::get('/redemptions', [GamificationController::class, 'getAllRedemptions']);
-        Route::post('/redemptions/{id}/fulfill', [GamificationController::class, 'fulfillRedemption']);
-        
         Route::prefix('rewards')->group(function () {
             Route::get('/', [RewardController::class, 'index']);       
             Route::post('/', [RewardController::class, 'store']);
             Route::post('/{id}', [RewardController::class, 'update']); 
             Route::delete('/{id}', [RewardController::class, 'destroy']);
+            Route::get('/redemptions', [GamificationController::class, 'getAllRedemptions']);
+            Route::post('/redemptions/{id}/fulfill', [GamificationController::class, 'fulfillRedemption']);
         });
     });
 
@@ -155,54 +133,30 @@ Route::post('/tutor-profile', [AuthController::class, 'updateTutorProfile']);
         Route::get('/dashboard', [ParentController::class, 'getDashboardData']);
         Route::get('/children', [ParentController::class, 'getChildren']);
         Route::post('/register-child', [ParentController::class, 'registerChild']);
-        Route::post('/switch-to-child/{childId}', [ParentController::class, 'switchToChild']);
-        Route::get('/active-student/{id}', [ParentController::class, 'getActiveStudentProfile']);
-        Route::get('/child-stats/{childId}', [ParentAnalyticsController::class, 'getChildStats']);
         Route::post('/submit-payment', [PaymentController::class, 'submitPayment']);
+        Route::get('/child-stats/{childId}', [ParentAnalyticsController::class, 'getChildStats']);
     });
 
     /*
     |----------------------------------------------------------------------
-    | 🛡️ VERIFIED ONLY ROUTES (Students)
+    | 🛡️ VERIFIED ONLY (Students)
     |----------------------------------------------------------------------
     */
     Route::middleware(['verified'])->group(function () {
+        Route::get('/courses', [CourseController::class, 'index']);
+        Route::get('/courses/{id}', [CourseController::class, 'show']);
+        
         Route::prefix('lessons')->group(function () {
             Route::get('/{id}', [LessonController::class, 'show']);
             Route::post('/{id}/complete', [LessonController::class, 'complete']);
-            Route::get('/{id}/questions', [LessonController::class, 'getQuestions']); 
         });
 
-        Route::get('/student/analytics', [AnalyticsController::class, 'studentStats']);
-        Route::post('/ai/hint', [AIHintController::class, 'getHint']);
         Route::post('/ai/chat-olu', [AiController::class, 'chatWithOlu']);
-        Route::post('/ai/verify-pronunciation', [AiController::class, 'verifyPronunciation']);
-
+        
         Route::prefix('gamification')->group(function () {
             Route::get('/leaderboard', [GamificationController::class, 'getLeaderboard']);
             Route::get('/rewards', [GamificationController::class, 'getRewardsCatalog']);
-            Route::get('/my-rewards', [GamificationController::class, 'getMyRewards']);
             Route::post('/rewards/{id}/redeem', [GamificationController::class, 'redeemReward']);
-            Route::post('/earn', [GamificationController::class, 'earn']);
         });
-
-        Route::get('/live-classes', [LiveClassController::class, 'index']);
     });
 });
-
-/*
-|--------------------------------------------------------------------------
-| 📧 Verification & Utils
-|--------------------------------------------------------------------------
-*/
-Route::get('/email/verify/{id}/{hash}', function (Request $request) {
-    if (!$request->hasValidSignature()) return response()->json(["message" => "Invalid link."], 403);
-    $user = \App\Models\User::findOrFail($request->route('id'));
-    if ($user->hasVerifiedEmail()) return response()->json(["message" => "Already verified."]);
-    if ($user->markEmailAsVerified()) event(new \Illuminate\Auth\Events\Verified($user));
-    return response()->json(["message" => "Email verified!"]);
-})->name('verification.verify');
-
-Route::get('/unauthorized', function () {
-    return response()->json(['message' => 'Unauthorized.'], 401);
-})->name('login');
