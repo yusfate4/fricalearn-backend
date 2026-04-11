@@ -19,7 +19,6 @@ class AuthController extends Controller
 {
     /**
      * 📝 Register a new user
-     * Supports Students, Parents, and Tutors.
      */
     public function register(Request $request)
     {
@@ -35,7 +34,7 @@ class AuthController extends Controller
             'grade_level' => 'required_if:role,student|string',
             'learning_language' => 'required_if:role,student|in:Yoruba,Hausa,Igbo',
 
-            // Tutor-specific (Optional at registration, but allowed)
+            // Tutor-specific fields
             'specialization' => 'required_if:role,tutor|string|max:255',
         ]);
 
@@ -49,7 +48,6 @@ class AuthController extends Controller
             'is_active' => true,
         ]);
 
-        // 🎓 Logic for Student Profile
         if ($user->role === 'student') {
             StudentProfile::create([
                 'user_id' => $user->id,
@@ -60,7 +58,6 @@ class AuthController extends Controller
             ]);
         }
 
-        // 👨‍🏫 Logic for Tutor Profile
         if ($user->role === 'tutor') {
             TutorProfile::create([
                 'user_id' => $user->id,
@@ -69,17 +66,16 @@ class AuthController extends Controller
             ]);
         }
 
-        // 📧 Trigger Oluko Verification Email
         event(new Registered($user));
 
         return response()->json([
             'status' => 'success',
-            'message' => 'Registration successful! Oluko has sent a verification link to ' . $user->email . '. Please verify your email to log in.',
+            'message' => 'Registration successful! Oluko has sent a verification link to ' . $user->email,
         ], 201);
     }
 
     /**
-     * 🔑 Login with Verification & Role-Based Profile Loading
+     * 🔑 Login with Verification & Bypass
      */
     public function login(Request $request)
     {
@@ -88,40 +84,29 @@ class AuthController extends Controller
             'password' => 'required',
         ]);
 
-        // 🚀 THE FIX: Trim whitespace and lowercase for consistent lookup
         $user = User::where('email', strtolower(trim($request->email)))->first();
 
-        /**
-         * 🛡️ THE SECURITY GATE:
-         * Allows standard Hash check OR the emergency tutor bypass password.
-         */
+        // Security Gate with Emergency Tutor Bypass
         if (!$user || ($request->password !== 'FricaTutor2026!' && !Hash::check($request->password, $user->password))) {
             throw ValidationException::withMessages([
                 'email' => ['The provided credentials do not match our records.'],
             ]);
         }
 
-        // 2. 🛑 THE GATEKEEPER: Check Email Verification (Returns 403)
         if (!$user->hasVerifiedEmail()) {
             return response()->json([
                 'status' => 'unverified',
-                'message' => 'Your email address is not verified. Please check your inbox.',
+                'message' => 'Your email address is not verified.',
                 'email' => $user->email
             ], 403); 
         }
 
-        // 3. Check Account Status (Returns 403)
         if (!$user->is_active) {
-            return response()->json([
-                'message' => 'Your account is suspended. Please contact the FricaLearn Admin.',
-            ], 403);
+            return response()->json(['message' => 'Your account is suspended.'], 403);
         }
 
-        // 4. Success Logic
         $user->update(['last_login_at' => now()]);
         $token = $user->createToken('auth_token')->plainTextToken;
-
-        // Eager load relevant profiles so React Sidebar works immediately
         $user->load(['studentProfile', 'tutorProfile', 'children.studentProfile']);
 
         return response()->json([
@@ -132,22 +117,66 @@ class AuthController extends Controller
     }
 
     /**
+     * 👤 Get the Tutor Profile (Staff Only)
+     * 🚀 FIX: Handles 500 errors by creating missing profiles on the fly
+     */
+    public function getTutorProfile(Request $request)
+    {
+        try {
+            $user = $request->user();
+
+            // Defense: If the profile row is missing, create it now
+            $profile = TutorProfile::firstOrCreate(
+                ['user_id' => $user->id],
+                [
+                    'specialization' => 'African Culture & Language',
+                    'bio' => 'Awaiting professional bio update...',
+                    'is_verified' => false
+                ]
+            );
+
+            return response()->json($profile);
+        } catch (\Exception $e) {
+            \Log::error("Tutor Profile Error: " . $e->getMessage());
+            return response()->json(['error' => 'Could not retrieve tutor profile.'], 500);
+        }
+    }
+
+    /**
+     * 💾 Update Tutor Profile Credentials
+     */
+    public function updateTutorProfile(Request $request)
+    {
+        $validated = $request->validate([
+            'bio' => 'nullable|string',
+            'specialization' => 'nullable|string',
+            'qualification' => 'nullable|string',
+        ]);
+
+        $user = $request->user();
+
+        $profile = TutorProfile::updateOrCreate(
+            ['user_id' => $user->id],
+            $validated
+        );
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Profile updated successfully!',
+            'profile' => $profile
+        ]);
+    }
+
+    /**
      * 📩 Resend Verification
      */
     public function resendVerification(Request $request)
     {
         $user = User::where('email', strtolower(trim($request->email)))->first();
-
-        if (!$user) {
-            return response()->json(['message' => 'Account not found.'], 404);
-        }
-
-        if ($user->hasVerifiedEmail()) {
-            return response()->json(['message' => 'This account is already verified.']);
-        }
+        if (!$user) return response()->json(['message' => 'Account not found.'], 404);
+        if ($user->hasVerifiedEmail()) return response()->json(['message' => 'Already verified.']);
 
         $user->sendEmailVerificationNotification();
-
         return response()->json(['message' => 'A fresh verification link has been sent!']);
     }
 
@@ -160,7 +189,7 @@ class AuthController extends Controller
         $status = Password::sendResetLink($request->only('email'));
 
         return $status === Password::RESET_LINK_SENT
-            ? response()->json(['message' => 'Password reset link sent! Check your email.'])
+            ? response()->json(['message' => 'Password reset link sent!'])
             : response()->json(['message' => __($status)], 400);
     }
 
@@ -185,12 +214,12 @@ class AuthController extends Controller
         );
 
         return $status === Password::PASSWORD_RESET
-            ? response()->json(['message' => 'Password reset successful! You can now log in.'], 200)
+            ? response()->json(['message' => 'Password reset successful!'], 200)
             : response()->json(['message' => __($status)], 400);
     }
 
     /**
-     * 👤 Get Current Authenticated User Data
+     * 👤 Get Auth User
      */
     public function me(Request $request)
     {
@@ -202,11 +231,11 @@ class AuthController extends Controller
     }
 
     /**
-     * 🚪 Logout & Revoke Token
+     * 🚪 Logout
      */
     public function logout(Request $request)
     {
         $request->user()->currentAccessToken()->delete();
-        return response()->json(['message' => 'Successfully logged out. O da abọ̀!']);
+        return response()->json(['message' => 'Logged out successfully. O da abọ̀!']);
     }
 }
