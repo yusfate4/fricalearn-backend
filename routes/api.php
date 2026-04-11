@@ -73,7 +73,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::middleware('admin')->prefix('admin')->group(function () {
 
         // 📊 Analytics & Dashboard Stats
-        Route::get('/analytics', [AnalyticsController::class, 'index']); // Fixes 404
+        Route::get('/analytics', [AnalyticsController::class, 'index']); 
         Route::get('/stats', [AnalyticsController::class, 'adminStats']);
         Route::get('/users', function() {
             return response()->json(\App\Models\User::where('role', 'student')->with('studentProfile')->get());
@@ -83,11 +83,14 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/tutor-profile', [AuthController::class, 'getTutorProfile']);
         Route::post('/tutor-profile', [AuthController::class, 'updateTutorProfile']);
         
-        // 🚀 THE FIX: Flattened Conversation Routes to match frontend GET /api/admin/conversations
+        // 🚀 THE CHAT FIX: Standardized GET /api/admin/conversations
         Route::get('/conversations', [ChatController::class, 'getAdminConversations']); 
         Route::get('/chats', [ChatController::class, 'getAdminConversations']);
         Route::get('/conversations/{id}/messages', [ChatController::class, 'getAdminMessages']); 
         Route::post('/conversations/{id}/read', [ChatController::class, 'markAsRead']);
+
+        // 🚀 THE REDEMPTIONS FIX: Flat route to match React frontend call
+        Route::get('/redemptions', [GamificationController::class, 'getAllRedemptions']);
 
         // Master Schedule & Live Classes
         Route::get('/schedule', [AdminScheduleController::class, 'getActiveSchedule']);
