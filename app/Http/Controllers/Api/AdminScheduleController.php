@@ -30,10 +30,12 @@ class AdminScheduleController extends Controller
      */
     public function updateSchedule(Request $request)
     {
-        // 1. Validate the Admin
-        $isAdmin = auth()->user()->role === 'admin' || (int)auth()->user()->is_admin === 1;
-        if (!$isAdmin) {
-            return response()->json(['message' => 'Oda! Admin access only.'], 403);
+        // 🚀 1. THE FIX: Expand check to include Tutors (Staff)
+        $user = auth()->user();
+        $isStaff = $user->role === 'admin' || $user->role === 'tutor' || (int)$user->is_admin === 1;
+        
+        if (!$isStaff) {
+            return response()->json(['message' => 'Oda! Staff access only.'], 403);
         }
 
         // 2. Validate input
@@ -43,9 +45,10 @@ class AdminScheduleController extends Controller
         ]);
 
         // 3. Save to site_settings table
+        // We use updateOrInsert to ensure we don't create duplicate keys
         DB::table('site_settings')->updateOrInsert(
             ['key' => 'class_day'],
-            ['value' => $validated['day_of_week'], 'updated_at' => now()]
+            ['value' => ucfirst(strtolower($validated['day_of_week'])), 'updated_at' => now()]
         );
 
         DB::table('site_settings')->updateOrInsert(
@@ -53,10 +56,14 @@ class AdminScheduleController extends Controller
             ['value' => $validated['start_time_wat'], 'updated_at' => now()]
         );
 
-        // 4. Prepare "Save the Date" Info
+        // 4. Prepare "Save the Date" Info for the Notification
         $newSchedule = "every " . $validated['day_of_week'] . " at " . $validated['start_time_wat'] . " WAT";
 
-        // 5. Notify all parents
+        /**
+         * 📧 5. NOTIFY ALL PARENTS
+         * Note: If you have 100+ parents, consider moving this to a 
+         * Queue (ShouldQueue) so the Tutor doesn't wait for emails to send.
+         */
         $parents = User::where('role', 'parent')->get();
         
         if ($parents->count() > 0) {
@@ -64,6 +71,7 @@ class AdminScheduleController extends Controller
         }
 
         return response()->json([
+            'status' => 'success',
             'message' => 'Schedule synced successfully and parents notified!',
             'schedule' => $newSchedule
         ]);
