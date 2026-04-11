@@ -4,6 +4,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\DB;
 
 // --- 🎮 Import All Controllers ---
 use App\Http\Controllers\Api\AuthController;
@@ -23,15 +24,38 @@ use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\RewardController;
 use App\Http\Controllers\Api\AdminScheduleController;
 
+/*
+|--------------------------------------------------------------------------
+| 🚀 THE YUSUF MIGRATION TOOL (Force Sync)
+|--------------------------------------------------------------------------
+*/
 Route::get('/run-migration-yusuf', function () {
     try {
-        // Run the migrations
+        // 1. Force clear the config and cache so Laravel re-scans the migrations folder
+        Artisan::call('config:clear');
+        Artisan::call('cache:clear');
+
+        // 2. Run the migration with --force for production
         Artisan::call('migrate', ['--force' => true]);
         
-        // Return the output so you can see it on your screen
-        return "<pre>" . Artisan::output() . "</pre><br><a href='/dashboard'>Go to Dashboard</a>";
+        $output = Artisan::output();
+        
+        // 3. Explicitly return a view-style response to stop any auto-redirects
+        return response("
+            <div style='font-family:sans-serif; padding:50px; background:#f9f9f9; min-height:100vh;'>
+                <h1 style='color:#2D5A27;'>🛠️ Migration Engine</h1>
+                <hr style='border:1px solid #ddd'>
+                <p><strong>System Status:</strong> Migration attempt completed.</p>
+                <div style='background:#1e1e1e; color:#00ff00; padding:20px; border-radius:10px; overflow-x:auto;'>
+                    <pre>" . ($output ?: 'Nothing to migrate (Database is already up to date).') . "</pre>
+                </div>
+                <br>
+                <a href='/dashboard' style='display:inline-block; padding:10px 20px; background:#2D5A27; color:white; text-decoration:none; border-radius:5px;'>Back to Dashboard</a>
+            </div>
+        ", 200)->header('Content-Type', 'text/html');
+
     } catch (\Exception $e) {
-        return "Migration failed: " . $e->getMessage();
+        return response("<h1>Migration Failed</h1><pre>{$e->getMessage()}</pre>", 500);
     }
 });
 
@@ -65,13 +89,13 @@ Route::prefix('auth')->group(function () {
     Route::post('/login', [AuthController::class, 'login']);
     Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
     Route::post('/reset-password', [AuthController::class, 'resetPassword']);
-    
-    // 🚀 NEW: Public endpoint to resend verification if they missed it
     Route::post('/resend-verification', [AuthController::class, 'resendVerification']);
 });
 
 Route::get('/public/analytics/{studentId}', [AnalyticsController::class, 'publicStudentStats']);
-Route::get('/ai/active-schedule', [AiController::class, 'getActiveSchedule']);
+
+// 📅 CLASS SCHEDULE (Public/Authenticated mix)
+Route::get('/ai/active-schedule', [AdminScheduleController::class, 'getActiveSchedule']);
 
 /*
 |--------------------------------------------------------------------------
@@ -80,11 +104,10 @@ Route::get('/ai/active-schedule', [AiController::class, 'getActiveSchedule']);
 */
 Route::middleware('auth:sanctum')->group(function () {
 
-    // 👤 --- AUTH & IDENTITY ---
     Route::get('/me', [AuthController::class, 'me']);
     Route::post('/logout', [AuthController::class, 'logout']);
 
-    Route::get('/ai/active-schedule', [AdminScheduleController::class, 'getActiveSchedule']);
+    // 📅 MASTER SCHEDULE (Admin Only)
     Route::post('/admin/update-schedule', [AdminScheduleController::class, 'updateSchedule']);
 
     // 👨‍👩‍👧‍👦 --- PARENT PORTAL ---
@@ -145,7 +168,6 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/questions', [QuestionController::class, 'index']); 
         Route::post('/questions', [QuestionController::class, 'store']);
         Route::post('/ai/generate-quiz', [AIQuizController::class, 'generate']);
-        Route::post('/update-schedule', [AiController::class, 'updateSchedule']);
 
         Route::prefix('payments')->group(function () {
             Route::get('/pending', [PaymentController::class, 'getPendingPayments']);
@@ -172,7 +194,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     /*
     |----------------------------------------------------------------------
-    | 🛡️ VERIFIED ONLY ROUTES (Deep learning access)
+    | 🛡️ VERIFIED ONLY ROUTES
     |----------------------------------------------------------------------
     */
     Route::middleware(['verified'])->group(function () {
@@ -202,28 +224,21 @@ Route::middleware('auth:sanctum')->group(function () {
 
 /*
 |--------------------------------------------------------------------------
-| 📧 THE FIX: Manual Verification to Avoid CORS Redirects
+| 📧 Manual Verification
 |--------------------------------------------------------------------------
 */
 Route::get('/email/verify/{id}/{hash}', function (Request $request) {
-    // 1. Check if the signature is valid
     if (! $request->hasValidSignature()) {
-        return response()->json(["message" => "Invalid or expired verification link."], 403);
+        return response()->json(["message" => "Invalid or expired link."], 403);
     }
-
     $user = \App\Models\User::findOrFail($request->route('id'));
-
-    // 2. Check if already verified
     if ($user->hasVerifiedEmail()) {
-        return response()->json(["message" => "Email already verified."]);
+        return response()->json(["message" => "Already verified."]);
     }
-
-    // 3. Mark as verified
     if ($user->markEmailAsVerified()) {
         event(new \Illuminate\Auth\Events\Verified($user));
     }
-
-    return response()->json(["message" => "Email verified successfully!"]);
+    return response()->json(["message" => "Email verified!"]);
 })->name('verification.verify');
 
 Route::get('/unauthorized', function () {
