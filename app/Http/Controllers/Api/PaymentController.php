@@ -13,10 +13,14 @@ use App\Models\StudentProfile;
 use Illuminate\Support\Facades\DB;
 use Cloudinary\Cloudinary;
 
+// 🚀 NOTIFICATIONS
+use App\Notifications\StudentAccountActivated;
+use App\Notifications\NewPaymentSubmitted;
+
 class PaymentController extends Controller
 {
     /**
-     * 💳 Parent: Submit payment and auto-initialize student account
+     * 💳 Parent: Submit payment and notify Admin
      */
     public function submitPayment(Request $request)
     {
@@ -41,7 +45,7 @@ class PaymentController extends Controller
 
         return DB::transaction(function () use ($validated, $parent, $request, $cloudinary) {
             
-            // 🚀 Create or find the student linked to this parent
+            // 🚀 1. Create/Find Student (Inactive)
             $student = User::firstOrCreate(
                 [
                     'name' => trim($validated['child_name']), 
@@ -52,11 +56,11 @@ class PaymentController extends Controller
                     'email' => strtolower(str_replace(' ', '', $validated['child_name'])) . '_' . uniqid() . '@fricalearn.com',
                     'password' => bcrypt('student123'),
                     'is_admin' => 0,
-                    'is_active' => 0, // Inactive until payment approved
+                    'is_active' => 0, 
                 ]
             );
 
-            // ☁️ Upload Receipt to Cloudinary
+            // ☁️ 2. Upload Receipt
             try {
                 $upload = $cloudinary->uploadApi()->upload(
                     $request->file('receipt')->getRealPath(),
@@ -67,7 +71,7 @@ class PaymentController extends Controller
                 throw new \Exception("Receipt upload failed: " . $e->getMessage());
             }
 
-            // 📄 Create Payment Record
+            // 📄 3. Create Payment Record
             $payment = EnrollmentPayment::create([
                 'parent_id'    => $parent->id,
                 'student_id'   => $student->id, 
@@ -79,21 +83,27 @@ class PaymentController extends Controller
                 'status'       => 'pending',
             ]);
 
+            // 🔔 4. NOTIFY ADMINS IMMEDIATELY
+            // Find all users with staff privileges to review the payment
+            $admins = User::where('role', 'admin')->orWhere('is_admin', 1)->get();
+            foreach ($admins as $admin) {
+                $admin->notify(new NewPaymentSubmitted($payment));
+            }
+
             return response()->json([
-                'message' => 'Receipt submitted successfully! Admin will verify soon.',
+                'message' => 'Receipt submitted successfully! Oluko has notified the Admin for verification.',
                 'payment_id' => $payment->id
             ], 201);
         });
     }
 
     /**
-     * ✅ Admin: Approve Payment & Activate Account
+     * ✅ Admin: Approve Payment, Activate Account & Notify Parent
      */
     public function approvePayment(Request $request, $id)
     {
-        // Use your Lead Consultant check to ensure only Admins/Staff can do this
-        if (!$request->user()->isStaff()) {
-            return response()->json(['message' => 'Unauthorized.'], 403);
+        if (!$request->user() || !$request->user()->isStaff()) {
+            return response()->json(['message' => 'Unauthorized. Staff access only.'], 403);
         }
 
         $payment = EnrollmentPayment::find($id);
@@ -107,100 +117,74 @@ class PaymentController extends Controller
                 return response()->json(['message' => 'Already approved.'], 400);
             }
 
-            // 1. Locate student using the student_id from payment record
+            // 1. Activate Student
             $student = User::find($payment->student_id);
-
             if ($student) {
-                $student->update([
-                    'parent_id' => $payment->parent_id,
-                    'is_active' => 1 // Activate the account now
-                ]);
-            } else {
-                // Emergency Fallback
-                $student = User::create([
-                    'name' => trim($payment->child_name),
-                    'email' => strtolower(str_replace(' ', '', $payment->child_name)) . '_' . rand(100, 999) . '@fricalearn.com',
-                    'password' => bcrypt('student123'),
-                    'role' => 'student',
-                    'parent_id' => $payment->parent_id,
-                    'is_active' => 1,
-                ]);
+                $student->update(['is_active' => 1]);
             }
 
-            // 2. Sync Pivot Table for Parent-Child Relationship
+            // 2. Link Parent/Child Relationship
             $parent = User::find($payment->parent_id);
-            if ($parent) {
+            if ($parent && $student) {
                 $parent->children()->syncWithoutDetaching([$student->id => ['relationship' => 'Parent']]);
             }
 
-            // 3. Update Payment Status
+            // 3. Update Status
             $payment->update([
                 'status' => 'approved',
                 'approved_at' => now(),
             ]);
 
-            // 4. Activate Course Enrollment
+            // 4. Enrollment
             CourseEnrollment::updateOrCreate(
                 ['course_id' => $payment->course_id, 'student_id' => $student->id],
-                [
-                    'status' => 'active', 
-                    'enrolled_at' => now(), 
-                    'expires_at' => now()->addDays(365) 
-                ]
+                ['status' => 'active', 'enrolled_at' => now(), 'expires_at' => now()->addDays(365)]
             );
 
-            // 5. Setup Student Profile
+            // 5. Profile Setup
             $course = Course::find($payment->course_id);
             $trackName = $course ? ($course->subject ?? $course->title) : 'General'; 
 
             StudentProfile::updateOrCreate(
                 ['user_id' => $student->id],
-                [
-                    'learning_language' => $trackName,
-                    'rank' => 'Akeko', // "Student" in Yoruba
-                    'total_points' => 0,
-                    'total_coins' => 0
-                ]
+                ['learning_language' => $trackName, 'rank' => 'Akeko', 'total_points' => 0]
             );
 
-            return response()->json(['message' => "Success! {$student->name}'s account is active."]);
+            // 🚀 6. NOTIFY PARENT WITH LOGIN DETAILS
+            if ($parent && $student) {
+                $parent->notify(new StudentAccountActivated([
+                    'name'  => $student->name,
+                    'email' => $student->email
+                ], $trackName));
+            }
+
+            return response()->json(['message' => "Success! Student activated and parent notified."]);
         });
     }
 
     /**
-     * 👑 Admin: Fetch all pending payments
+     * 👑 Admin View Methods
      */
     public function getPendingPayments()
     {
-        $payments = EnrollmentPayment::with(['parent:id,name,email', 'course:id,title'])
-            ->where('status', 'pending')
-            ->latest()
-            ->get();
-
-        return response()->json($payments);
+        return response()->json(
+            EnrollmentPayment::with(['parent:id,name,email', 'course:id,title'])
+                ->where('status', 'pending')->latest()->get()
+        );
     }
 
-    /**
-     * 📜 Admin: History
-     */
     public function getPaymentHistory()
     {
-        $payments = EnrollmentPayment::with(['parent:id,name', 'course:id,title'])
-            ->whereIn('status', ['approved', 'rejected'])
-            ->latest()
-            ->get();
-
-        return response()->json($payments);
+        return response()->json(
+            EnrollmentPayment::with(['parent:id,name', 'course:id,title'])
+                ->whereIn('status', ['approved', 'rejected'])->latest()->get()
+        );
     }
 
-    /**
-     * ❌ Admin: Reject Payment
-     */
     public function rejectPayment($id)
     {
         $payment = EnrollmentPayment::findOrFail($id);
         $payment->update(['status' => 'rejected']);
-        
         return response()->json(['message' => 'Payment rejected.']);
     }
 }

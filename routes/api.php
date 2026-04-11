@@ -80,6 +80,10 @@ Route::middleware('auth:sanctum')->group(function () {
     |--------------------------------------------------------------------------
     */
     Route::middleware('admin')->prefix('admin')->group(function () {
+
+    Route::get('/tutor-profile', [AuthController::class, 'getTutorProfile']);
+Route::post('/tutor-profile', [AuthController::class, 'updateTutorProfile']);
+
         // Shared Dashboard Access
         Route::get('/stats', [AnalyticsController::class, 'adminStats']);
         Route::get('/users', function() {

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Models\StudentProfile;
+use App\Models\TutorProfile;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Password; 
@@ -18,7 +19,7 @@ class AuthController extends Controller
 {
     /**
      * 📝 Register a new user
-     * Strategy: We trigger the email but do NOT return a login token.
+     * Supports Students, Parents, and Tutors.
      */
     public function register(Request $request)
     {
@@ -33,6 +34,9 @@ class AuthController extends Controller
             'date_of_birth' => 'required_if:role,student|date',
             'grade_level' => 'required_if:role,student|string',
             'learning_language' => 'required_if:role,student|in:Yoruba,Hausa,Igbo',
+
+            // Tutor-specific (Optional at registration, but allowed)
+            'specialization' => 'required_if:role,tutor|string|max:255',
         ]);
 
         $user = User::create([
@@ -41,10 +45,11 @@ class AuthController extends Controller
             'password' => Hash::make($validated['password']),
             'role' => $validated['role'],
             'country' => $validated['country'] ?? null,
-            'timezone' => 'Africa/Lagos', 
+            'timezone' => $request->timezone ?? 'Africa/Lagos', 
             'is_active' => true,
         ]);
 
+        // 🎓 Logic for Student Profile
         if ($user->role === 'student') {
             StudentProfile::create([
                 'user_id' => $user->id,
@@ -52,6 +57,15 @@ class AuthController extends Controller
                 'grade_level' => $validated['grade_level'],
                 'learning_language' => $validated['learning_language'],
                 'daily_ai_minutes' => 0, 
+            ]);
+        }
+
+        // 👨‍🏫 Logic for Tutor Profile
+        if ($user->role === 'tutor') {
+            TutorProfile::create([
+                'user_id' => $user->id,
+                'specialization' => $validated['specialization'] ?? 'General Culture',
+                'is_verified' => false, // Founder must verify tutors manually
             ]);
         }
 
@@ -65,7 +79,7 @@ class AuthController extends Controller
     }
 
     /**
-     * 🔑 Login with Verification Gate
+     * 🔑 Login with Verification & Role-Based Profile Loading
      */
     public function login(Request $request)
     {
@@ -79,7 +93,7 @@ class AuthController extends Controller
         // 1. Check Credentials
         if (!$user || !Hash::check($request->password, $user->password)) {
             throw ValidationException::withMessages([
-                'email' => ['The provided credentials are incorrect.'],
+                'email' => ['The provided credentials do not match our records.'],
             ]);
         }
 
@@ -87,7 +101,7 @@ class AuthController extends Controller
         if (!$user->hasVerifiedEmail()) {
             return response()->json([
                 'status' => 'unverified',
-                'message' => 'Your email address is not verified.',
+                'message' => 'Your email address is not verified. Please check your inbox.',
                 'email' => $user->email
             ], 403); 
         }
@@ -95,7 +109,7 @@ class AuthController extends Controller
         // 3. Check Account Status
         if (!$user->is_active) {
             return response()->json([
-                'message' => 'Your account is inactive. Please contact FricaLearn support.',
+                'message' => 'Your account is suspended. Please contact the FricaLearn Admin.',
             ], 403);
         }
 
@@ -103,31 +117,34 @@ class AuthController extends Controller
         $user->update(['last_login_at' => now()]);
         $token = $user->createToken('auth_token')->plainTextToken;
 
+        // Eager load relevant profiles based on role
+        $user->load(['studentProfile', 'tutorProfile', 'children.studentProfile']);
+
         return response()->json([
             'status' => 'success',
-            'user' => $user->load(['studentProfile', 'tutorProfile', 'children.studentProfile']),
+            'user' => $user,
             'token' => $token,
         ]);
     }
 
     /**
-     * 📩 Resend Verification (New Helper for the "Unverified" Modal)
+     * 📩 Resend Verification
      */
     public function resendVerification(Request $request)
     {
         $user = User::where('email', $request->email)->first();
 
         if (!$user) {
-            return response()->json(['message' => 'User not found.'], 404);
+            return response()->json(['message' => 'Account not found.'], 404);
         }
 
         if ($user->hasVerifiedEmail()) {
-            return response()->json(['message' => 'Email already verified.']);
+            return response()->json(['message' => 'This account is already verified.']);
         }
 
         $user->sendEmailVerificationNotification();
 
-        return response()->json(['message' => 'Verification link resent! Check your inbox.']);
+        return response()->json(['message' => 'A fresh verification link has been sent!']);
     }
 
     /**
@@ -136,11 +153,10 @@ class AuthController extends Controller
     public function forgotPassword(Request $request)
     {
         $request->validate(['email' => 'required|email']);
-
         $status = Password::sendResetLink($request->only('email'));
 
         return $status === Password::RESET_LINK_SENT
-            ? response()->json(['message' => 'Oluko has sent a reset link to your inbox!'])
+            ? response()->json(['message' => 'Password reset link sent! Check your email.'])
             : response()->json(['message' => __($status)], 400);
     }
 
@@ -155,44 +171,38 @@ class AuthController extends Controller
             'password' => 'required|min:8|confirmed',
         ]);
 
-        try {
-            $userUpdated = false;
-
-            $status = Password::reset(
-                $request->only('email', 'password', 'password_confirmation', 'token'),
-                function ($user, $password) use (&$userUpdated) {
-                    $user->password = Hash::make($password);
-                    $user->setRememberToken(Str::random(60));
-                    $user->save();
-                    $userUpdated = true;
-                }
-            );
-
-            if ($status === Password::PASSWORD_RESET && $userUpdated) {
-                return response()->json(['message' => 'Your password has been reset successfully!'], 200);
+        $status = Password::reset(
+            $request->only('email', 'password', 'password_confirmation', 'token'),
+            function ($user, $password) {
+                $user->password = Hash::make($password);
+                $user->setRememberToken(Str::random(60));
+                $user->save();
             }
+        );
 
-            return response()->json(['message' => __($status)], 400);
-
-        } catch (\Exception $e) {
-            return response()->json([
-                'message' => 'System Error during reset.',
-                'debug_error' => $e->getMessage()
-            ], 500); 
-        }
+        return $status === Password::PASSWORD_RESET
+            ? response()->json(['message' => 'Password reset successful! You can now log in.'], 200)
+            : response()->json(['message' => __($status)], 400);
     }
 
+    /**
+     * 👤 Get Current Authenticated User Data
+     */
     public function me(Request $request)
     {
         return response()->json($request->user()->load([
             'studentProfile', 
+            'tutorProfile',
             'children.studentProfile'
         ]));
     }
 
+    /**
+     * 🚪 Logout & Revoke Token
+     */
     public function logout(Request $request)
     {
         $request->user()->currentAccessToken()->delete();
-        return response()->json(['message' => 'Successfully logged out']);
+        return response()->json(['message' => 'Logged out successfully. O da abọ̀!']);
     }
 }
