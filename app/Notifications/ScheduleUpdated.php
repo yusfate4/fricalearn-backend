@@ -33,6 +33,6 @@ class ScheduleUpdated extends Notification
             ->line('Please update your calendars to ensure your child doesn\'t miss out on our live cultural sessions.')
             ->action('View Full Calendar', url('https://fricalearn.com/dashboard'))
             ->line('Thank you for being part of the FricaLearn family!')
-            ->salutation('Warm regards, Dahud Yusuf & The FricaLearn Team');
+            ->salutation('Warm regards, The FricaLearn Team');
     }
 }

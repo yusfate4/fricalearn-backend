@@ -24,19 +24,23 @@ class StudentAccountActivated extends Notification
         return ['mail'];
     }
 
-    public function toMail(object $notifiable): MailMessage
-    {
-        return (new MailMessage)
-            ->subject('🚀 Welcome to FricaLearn! ' . $this->studentData['name'] . '\'s Account is Ready')
-            ->greeting('Ẹ n lẹ́, ' . $notifiable->name . '!')
-            ->line('Great news! We have verified your payment for the **' . $this->courseName . '** track.')
-            ->line('Your child\'s learning account has been officially activated. They can now begin their journey into African culture and language.')
-            ->line('**Child\'s Login Credentials:**')
-            ->line('📧 **Email:** ' . $this->studentData['email'])
-            ->line('🔑 **Temporary Password:** student123')
-            ->action('Start Learning Now', url('https://fricalearn.com/login'))
-            ->line('Note: For security, please have your child update their password once they log in.')
-            ->line('We are excited to have you in the FricaLearn family!')
-            ->salutation('Warm regards, Dahud Yusuf & The FricaLearn Team');
-    }
+ public function toMail($notifiable)
+{
+    return (new \Illuminate\Notifications\Messages\MailMessage)
+        ->subject('Great News! Your Child’s Learning Track is Active 🚀')
+        ->greeting('Ẹ n lẹ́, ' . $notifiable->name . '!')
+        ->line('Great news! We have verified your payment for the **' . $this->trackName . '** track.')
+        ->line('Your child\'s learning account has been officially activated. They can now begin their journey into African culture and language through the parent portal.')
+        
+        ->line('**How to Start Learning:**')
+        ->line('1. **Login:** Use your registered parent email and password to access your dashboard.')
+        ->line('2. **Select Child:** You will now see **' . $this->studentData['name'] . '** listed under your active students.')
+        ->line('3. **Launch Portal:** Click on your child’s name to enter their personalized student portal where they can start their lessons immediately.')
+        
+        ->action('Login to Parent Dashboard', url('https://fricalearn.com/login'))
+        
+        ->line('By managing access through your portal, you can easily track their progress and stay involved in their learning journey.')
+        ->line('We are excited to have you and your family in the FricaLearn community!')
+        ->salutation('Warm regards, The FricaLearn Team');
+}
 }
