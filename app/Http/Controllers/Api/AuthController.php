@@ -14,9 +14,43 @@ use Illuminate\Validation\ValidationException;
 use Illuminate\Auth\Events\Registered; 
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Log;
 
 class AuthController extends Controller
 {
+    /**
+     * 📥 NEW: Handle Landing Page Contact Form
+     * Sends inquiries to hello@fricalearn.com
+     */
+    public function handleContactForm(Request $request)
+    {
+        $validated = $request->validate([
+            'name'    => 'required|string|max:255',
+            'email'   => 'required|email',
+            'role'    => 'required|string',
+            'message' => 'required|string',
+        ]);
+
+        try {
+            $emailBody = "New Inquiry from FricaLearn Landing Page:\n\n" .
+                         "👤 Name: {$validated['name']}\n" .
+                         "📧 Email: {$validated['email']}\n" .
+                         "🏷️ Role: " . ucfirst($validated['role']) . "\n\n" .
+                         "📝 Message:\n{$validated['message']}";
+
+            Mail::raw($emailBody, function ($message) use ($validated) {
+                $message->to('hello@fricalearn.com')
+                        ->subject("📥 New " . ucfirst($validated['role']) . " Inquiry: " . $validated['name']);
+            });
+
+            return response()->json(['message' => 'Ẹ ṣé! Your message has been sent successfully.'], 200);
+        } catch (\Exception $e) {
+            Log::error("Contact Form Failure: " . $e->getMessage());
+            return response()->json(['message' => 'Oluko is having trouble sending your message. Please try again later.'], 500);
+        }
+    }
+
     /**
      * 📝 Register a new user
      */
@@ -29,12 +63,12 @@ class AuthController extends Controller
             'role' => 'required|in:student,parent,tutor',
             'country' => 'nullable|string|max:100',
             
-            // Student-specific fields
+            // Student-specific
             'date_of_birth' => 'required_if:role,student|date',
             'grade_level' => 'required_if:role,student|string',
             'learning_language' => 'required_if:role,student|in:Yoruba,Hausa,Igbo',
 
-            // Tutor-specific fields
+            // Tutor-specific
             'specialization' => 'required_if:role,tutor|string|max:255',
         ]);
 
@@ -118,14 +152,12 @@ class AuthController extends Controller
 
     /**
      * 👤 Get the Tutor Profile (Staff Only)
-     * 🚀 FIX: Handles 500 errors by creating missing profiles on the fly
      */
     public function getTutorProfile(Request $request)
     {
         try {
             $user = $request->user();
 
-            // Defense: If the profile row is missing, create it now
             $profile = TutorProfile::firstOrCreate(
                 ['user_id' => $user->id],
                 [
@@ -137,13 +169,13 @@ class AuthController extends Controller
 
             return response()->json($profile);
         } catch (\Exception $e) {
-            \Log::error("Tutor Profile Error: " . $e->getMessage());
+            Log::error("Tutor Profile Error: " . $e->getMessage());
             return response()->json(['error' => 'Could not retrieve tutor profile.'], 500);
         }
     }
 
     /**
-     * 💾 Update Tutor Profile Credentials
+     * 💾 Update Tutor Profile
      */
     public function updateTutorProfile(Request $request)
     {
