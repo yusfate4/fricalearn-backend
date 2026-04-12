@@ -121,14 +121,15 @@ class PaymentController extends Controller
      * ✅ Admin: Approve Payment, Activate Account & Notify Parent
      */
     public function approvePayment(Request $request, $id)
-    {
-        $user = $request->user();
-        if (!$user || ($user->role !== 'admin' && (int)$user->is_admin !== 1 && $user->role !== 'tutor')) {
-            return response()->json(['message' => 'Unauthorized. Staff access only.'], 403);
-        }
+{
+    $user = $request->user();
+    if (!$user || ($user->role !== 'admin' && (int)$user->is_admin !== 1 && $user->role !== 'tutor')) {
+        return response()->json(['message' => 'Unauthorized.'], 403);
+    }
 
-        $payment = EnrollmentPayment::findOrFail($id);
+    $payment = EnrollmentPayment::findOrFail($id);
 
+    try {
         return DB::transaction(function () use ($payment) {
             if ($payment->status === 'approved') {
                 return response()->json(['message' => 'Already approved.'], 400);
@@ -140,10 +141,14 @@ class PaymentController extends Controller
                 $student->update(['is_active' => 1]);
             }
 
-            // 2. Link Parent/Child Sync
-            $parent = User::find($payment->parent_id);
-            if ($parent && $student) {
-                $parent->children()->syncWithoutDetaching([$student->id => ['relationship' => 'Parent']]);
+            // 2. Link Relationship (Wrapped in try-catch to prevent 500 if relationship fails)
+            try {
+                $parent = User::find($payment->parent_id);
+                if ($parent && $student && method_exists($parent, 'children')) {
+                    $parent->children()->syncWithoutDetaching([$student->id => ['relationship' => 'Parent']]);
+                }
+            } catch (\Exception $e) {
+                Log::error("Relationship Sync Failed: " . $e->getMessage());
             }
 
             // 3. Update Status
@@ -152,37 +157,39 @@ class PaymentController extends Controller
                 'approved_at' => now(),
             ]);
 
-            // 4. Create Enrollment
+            // 4. Enrollment & Profile
             CourseEnrollment::updateOrCreate(
                 ['course_id' => $payment->course_id, 'student_id' => $student->id],
                 ['status' => 'active', 'enrolled_at' => now(), 'expires_at' => now()->addDays(365)]
             );
 
-            // 5. Setup Profile
             $course = Course::find($payment->course_id);
-            $trackName = $course ? ($course->title) : 'General Yoruba'; 
-
             StudentProfile::updateOrCreate(
                 ['user_id' => $student->id],
-                ['learning_language' => $trackName, 'rank' => 'Akeko']
+                ['learning_language' => $course->title ?? 'Yoruba', 'rank' => 'Akeko']
             );
 
-            // 🚀 6. NOTIFY PARENT WITH LOGIN DETAILS
-            if ($parent && $student) {
-                try {
+            // 🚀 5. NOTIFY PARENT (The most common cause of 500 errors)
+            // We use a separate try-catch so an email failure doesn't roll back the activation
+            try {
+                if ($parent && $student) {
                     $parent->notify(new StudentAccountActivated([
                         'name'  => $student->name,
                         'email' => $student->email
-                    ], $trackName));
-                } catch (\Exception $e) {
-                    Log::error("Activation notification failed: " . $e->getMessage());
+                    ], $course->title ?? 'General Yoruba'));
                 }
+            } catch (\Exception $e) {
+                Log::error("Activation Email Failed: " . $e->getMessage());
+                // We DON'T throw the error here, so the student stays activated!
             }
 
-            return response()->json(['message' => "Success! Student activated and parent notified."]);
+            return response()->json(['message' => "Success! Student activated."]);
         });
+    } catch (\Exception $e) {
+        Log::error("Approval 500 Error: " . $e->getMessage());
+        return response()->json(['message' => 'Internal Error: ' . $e->getMessage()], 500);
     }
-
+}
     public function getPendingPayments()
     {
         return response()->json(
