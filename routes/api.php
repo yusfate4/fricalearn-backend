@@ -38,6 +38,9 @@ Route::get('/force-migrate-7788', function () {
 | 🔓 Public Routes
 |--------------------------------------------------------------------------
 */
+// 🚀 THE FIX: Landing Page Contact Form
+Route::post('/contact', [AuthController::class, 'handleContactForm']);
+
 Route::get('/ai/active-schedule', [AdminScheduleController::class, 'getActiveSchedule']);
 
 Route::prefix('auth')->group(function () {
@@ -58,7 +61,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/me', [AuthController::class, 'me']);
     Route::post('/logout', [AuthController::class, 'logout']);
 
-    // 🚀 GLOBAL CHAT (Shared between Staff & Students)
+    // 🚀 GLOBAL CHAT
     Route::prefix('chat')->group(function () {
         Route::post('/message', [ChatController::class, 'sendMessage']);
         Route::get('/conversations', [ChatController::class, 'getConversations']);
@@ -72,27 +75,27 @@ Route::middleware('auth:sanctum')->group(function () {
     */
     Route::middleware('admin')->prefix('admin')->group(function () {
 
-        // 📊 Analytics & Dashboard Stats
+        // 📊 Analytics
         Route::get('/analytics', [AnalyticsController::class, 'index']); 
         Route::get('/stats', [AnalyticsController::class, 'adminStats']);
         Route::get('/users', function() {
             return response()->json(\App\Models\User::where('role', 'student')->with('studentProfile')->get());
         });
 
-        // 📝 Staff Profile & Inbox
+        // 📝 Staff Profile
         Route::get('/tutor-profile', [AuthController::class, 'getTutorProfile']);
         Route::post('/tutor-profile', [AuthController::class, 'updateTutorProfile']);
         
-        // 🚀 THE CHAT FIX: Standardized GET /api/admin/conversations
+        // 💬 Admin Chats
         Route::get('/conversations', [ChatController::class, 'getAdminConversations']); 
         Route::get('/chats', [ChatController::class, 'getAdminConversations']);
         Route::get('/conversations/{id}/messages', [ChatController::class, 'getAdminMessages']); 
         Route::post('/conversations/{id}/read', [ChatController::class, 'markAsRead']);
 
-        // 🚀 THE REDEMPTIONS FIX: Flat route to match React frontend call
+        // 🎁 Redemptions (Flat route for React frontend)
         Route::get('/redemptions', [GamificationController::class, 'getAllRedemptions']);
 
-        // Master Schedule & Live Classes
+        // 📅 Live Classes & Scheduling
         Route::get('/schedule', [AdminScheduleController::class, 'getActiveSchedule']);
         Route::post('/update-schedule', [AdminScheduleController::class, 'updateSchedule']);
         Route::get('/live-classes', [LiveClassController::class, 'index']);
@@ -100,7 +103,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/live-classes', [LiveClassController::class, 'store']);
         Route::delete('/live-classes/{id}', [LiveClassController::class, 'destroy']);
 
-        // Content Management
+        // 📚 Content Management
         Route::apiResource('courses', CourseController::class)->except(['show']);
         Route::get('/lessons', [LessonController::class, 'index']);
         Route::post('/lessons', [LessonController::class, 'store']);
@@ -109,16 +112,12 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/lessons/{id}', [LessonController::class, 'destroy']);
         Route::post('/lessons/{id}/content', [LessonController::class, 'uploadContent']);
 
-        // Quiz Builder
+        // 📝 Quiz Builder
         Route::get('/questions', [QuestionController::class, 'index']); 
         Route::post('/questions', [QuestionController::class, 'store']);
         Route::post('/ai/generate-quiz', [AIQuizController::class, 'generate']);
 
-        /*
-        |------------------------------------------------------------------
-        | ⛔ FOUNDER ONLY (Financials & Inventory)
-        |------------------------------------------------------------------
-        */
+        // 💰 Financials
         Route::prefix('payments')->group(function () {
             Route::get('/pending', [PaymentController::class, 'getPendingPayments']);
             Route::get('/history', [PaymentController::class, 'getPaymentHistory']);
@@ -126,6 +125,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::post('/{id}/reject', [PaymentController::class, 'rejectPayment']);
         });
 
+        // 🏆 Rewards Inventory
         Route::prefix('rewards')->group(function () {
             Route::get('/', [RewardController::class, 'index']);       
             Route::post('/', [RewardController::class, 'store']);
@@ -147,7 +147,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/register-child', [ParentController::class, 'registerChild']);
         Route::post('/submit-payment', [PaymentController::class, 'submitPayment']);
         Route::get('/child-stats/{childId}', [ParentAnalyticsController::class, 'getChildStats']);
-        Route::get('/courses', [CourseController::class, 'index']);
+        Route::get('/courses', [CourseController::class, 'index']); // Fixes 404 in course selection
     });
 
     /*
@@ -156,7 +156,7 @@ Route::middleware('auth:sanctum')->group(function () {
     |----------------------------------------------------------------------
     */
     Route::middleware(['verified'])->group(function () {
-        Route::get('/live-classes', [LiveClassController::class, 'index']);
+        Route::get('/live-classes', [LiveClassController::class, 'index']); // Fixes Dashboard Sync
         Route::get('/courses', [CourseController::class, 'index']);
         Route::get('/courses/{id}', [CourseController::class, 'show']);
         
