@@ -29,7 +29,7 @@ class PaymentReceivedParent extends Notification
             ->subject('We’ve Received Your Payment Proof! 🚀')
             ->greeting('Ẹ n lẹ́, ' . $notifiable->name . '!')
             ->line('Thank you for submitting the payment proof for **' . $this->payment->child_name . '**.')
-            ->line('Our team (Olukọ) is currently verifying the receipt. This usually takes less than 24 hours.')
+            ->line('Our team is currently verifying the receipt. This usually takes less than 24 hours.')
             ->line('**Summary of Submission:**')
             ->line('📚 **Course:** ' . ($this->payment->course->title ?? 'Selected Course'))
             ->line('💰 **Amount:** ' . $this->payment->currency . ' ' . number_format($this->payment->amount, 2))
