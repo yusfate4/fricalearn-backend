@@ -11,15 +11,30 @@ class EnrollmentPayment extends Model
 
     protected $fillable = [
         'parent_id',
+        'student_id',   // 🚀 ADDED: Essential for linking the child
         'course_id',
         'child_name',
         'amount',
         'currency',
         'receipt_path',
-        'status'
+        'status',
+        'approved_at'   // 🚀 ADDED: Essential for the Audit Log/History
     ];
 
-    // Relationships
-    public function parent() { return $this->belongsTo(User::class, 'parent_id'); }
-    public function course() { return $this->belongsTo(Course::class); }
+    // --- 🤝 Relationships ---
+
+    public function parent() 
+    { 
+        return $this->belongsTo(User::class, 'parent_id'); 
+    }
+
+    public function student() 
+    { 
+        return $this->belongsTo(User::class, 'student_id'); 
+    }
+
+    public function course() 
+    { 
+        return $this->belongsTo(Course::class); 
+    }
 }

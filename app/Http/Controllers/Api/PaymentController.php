@@ -16,7 +16,7 @@ use Cloudinary\Cloudinary;
 // 🚀 NOTIFICATIONS
 use App\Notifications\StudentAccountActivated;
 use App\Notifications\NewPaymentSubmitted;
-use App\Notifications\PaymentReceivedParent; // 👈 Added this
+use App\Notifications\PaymentReceivedParent;
 
 class PaymentController extends Controller
 {
@@ -38,7 +38,7 @@ class PaymentController extends Controller
         try {
             return DB::transaction(function () use ($request, $parent) {
                 
-                // 🚀 1. Create/Find Student (Inactive)
+                // 🚀 1. Create/Find Student (Ensure ID is captured)
                 $student = User::firstOrCreate(
                     [
                         'name' => trim($request->child_name), 
@@ -70,10 +70,10 @@ class PaymentController extends Controller
                     $receiptUrl = $upload['secure_url'];
                 } catch (\Exception $e) {
                     Log::error("Cloudinary Upload Error: " . $e->getMessage());
-                    throw new \Exception("Receipt upload failed. Check your connection.");
+                    throw new \Exception("Receipt upload failed. Check your credentials or internet.");
                 }
 
-                // 📄 3. Create Payment Record
+                // 📄 3. Create Payment Record (student_id is MUST)
                 $payment = EnrollmentPayment::create([
                     'parent_id'    => $parent->id,
                     'student_id'   => $student->id, 
@@ -85,26 +85,26 @@ class PaymentController extends Controller
                     'status'       => 'pending',
                 ]);
 
-                // 🔔 4a. NOTIFY ADMINS (Verification Required)
+                // 🔔 4a. NOTIFY ADMINS
                 $admins = User::where('role', 'admin')->orWhere('is_admin', 1)->get();
                 foreach ($admins as $admin) {
                     try {
                         $admin->notify(new NewPaymentSubmitted($payment));
                     } catch (\Exception $e) {
-                        Log::warning("Admin email failed but transaction continued: " . $e->getMessage());
+                        Log::warning("Admin email failed: " . $e->getMessage());
                     }
                 }
 
-                // 🔔 4b. NOTIFY PARENT (Peace of Mind)
+                // 🔔 4b. NOTIFY PARENT
                 try {
                     $parent->notify(new PaymentReceivedParent($payment));
                 } catch (\Exception $e) {
-                    Log::warning("Parent email failed but transaction continued: " . $e->getMessage());
+                    Log::warning("Parent receipt email failed: " . $e->getMessage());
                 }
 
                 return response()->json([
                     'status' => 'success',
-                    'message' => 'Receipt submitted! You and the Admin have been notified.',
+                    'message' => 'Receipt submitted successfully! Oluko has notified the Admin for verification.',
                     'payment_id' => $payment->id
                 ], 201);
             });
@@ -112,7 +112,7 @@ class PaymentController extends Controller
             Log::error("Payment Submission 500: " . $e->getMessage());
             return response()->json([
                 'status' => 'error',
-                'message' => $e->getMessage()
+                'message' => 'Action Halted: ' . $e->getMessage()
             ], 500);
         }
     }
@@ -120,81 +120,78 @@ class PaymentController extends Controller
     /**
      * ✅ Admin: Approve Payment, Activate Account & Notify Parent
      */
-    
     public function approvePayment(Request $request, $id)
-{
-    $user = $request->user();
-    if (!$user || ($user->role !== 'admin' && (int)$user->is_admin !== 1 && $user->role !== 'tutor')) {
-        return response()->json(['message' => 'Unauthorized. Staff access only.'], 403);
-    }
+    {
+        $user = $request->user();
+        // Staff check (Admin or Tutor)
+        if (!$user || ($user->role !== 'admin' && (int)$user->is_admin !== 1 && $user->role !== 'tutor')) {
+            return response()->json(['message' => 'Unauthorized. Staff access only.'], 403);
+        }
 
-    $payment = EnrollmentPayment::findOrFail($id);
+        $payment = EnrollmentPayment::findOrFail($id);
 
-    try {
-        return DB::transaction(function () use ($payment) {
-            if ($payment->status === 'approved') {
-                return response()->json(['message' => 'Already approved.'], 400);
-            }
-
-            // 🚀 1. FIND STUDENT (The Null Check)
-            $student = User::find($payment->student_id);
-            
-            if (!$student) {
-                // If the student is missing, we can't proceed. 
-                // Let's return a clean error instead of crashing.
-                throw new \Exception("The student account for this payment (ID: {$payment->student_id}) no longer exists or was never created.");
-            }
-
-            // 2. Activate Student
-            $student->update(['is_active' => 1]);
-
-            // 3. Link Parent/Child Relationship
-            $parent = User::find($payment->parent_id);
-            if ($parent && method_exists($parent, 'children')) {
-                $parent->children()->syncWithoutDetaching([$student->id => ['relationship' => 'Parent']]);
-            }
-
-            // 4. Update Payment Status
-            $payment->update([
-                'status' => 'approved',
-                'approved_at' => now(),
-            ]);
-
-            // 5. Create Enrollment
-            CourseEnrollment::updateOrCreate(
-                ['course_id' => $payment->course_id, 'student_id' => $student->id],
-                ['status' => 'active', 'enrolled_at' => now(), 'expires_at' => now()->addDays(365)]
-            );
-
-            // 6. Setup Profile
-            $course = Course::find($payment->course_id);
-            $trackName = $course ? ($course->title) : 'General Yoruba'; 
-
-            StudentProfile::updateOrCreate(
-                ['user_id' => $student->id],
-                ['learning_language' => $trackName, 'rank' => 'Akeko']
-            );
-
-            // 7. Notify Parent (Safe Notification)
-            try {
-                if ($parent) {
-                    $parent->notify(new StudentAccountActivated([
-                        'name'  => $student->name,
-                        'email' => $student->email
-                    ], $trackName));
+        try {
+            return DB::transaction(function () use ($payment) {
+                if ($payment->status === 'approved') {
+                    return response()->json(['message' => 'Already approved.'], 400);
                 }
-            } catch (\Exception $e) {
-                \Log::error("Activation email failed: " . $e->getMessage());
-            }
 
-            return response()->json(['message' => "Success! Student activated and parent notified."]);
-        });
-    } catch (\Exception $e) {
-        \Log::error("Approval Error: " . $e->getMessage());
-        return response()->json(['message' => 'Action Halted: ' . $e->getMessage()], 500);
+                // 🚀 1. FIND STUDENT (The Null Check - Fixes the property 'id' on null error)
+                $student = User::find($payment->student_id);
+                
+                if (!$student) {
+                    throw new \Exception("The student account for this payment (ID: {$payment->student_id}) no longer exists or was never created.");
+                }
+
+                // 2. Activate Student
+                $student->update(['is_active' => 1]);
+
+                // 3. Link Parent/Child Relationship
+                $parent = User::find($payment->parent_id);
+                if ($parent && method_exists($parent, 'children')) {
+                    $parent->children()->syncWithoutDetaching([$student->id => ['relationship' => 'Parent']]);
+                }
+
+                // 4. Update Payment Status
+                $payment->update([
+                    'status' => 'approved',
+                    'approved_at' => now(),
+                ]);
+
+                // 5. Create Enrollment
+                CourseEnrollment::updateOrCreate(
+                    ['course_id' => $payment->course_id, 'student_id' => $student->id],
+                    ['status' => 'active', 'enrolled_at' => now(), 'expires_at' => now()->addDays(365)]
+                );
+
+                // 6. Setup Profile
+                $course = Course::find($payment->course_id);
+                $trackName = $course ? ($course->title) : 'General Yoruba'; 
+
+                StudentProfile::updateOrCreate(
+                    ['user_id' => $student->id],
+                    ['learning_language' => $trackName, 'rank' => 'Akeko']
+                );
+
+                // 7. Notify Parent of Activation (Credentials Mail)
+                try {
+                    if ($parent) {
+                        $parent->notify(new StudentAccountActivated([
+                            'name'  => $student->name,
+                            'email' => $student->email
+                        ], $trackName));
+                    }
+                } catch (\Exception $e) {
+                    Log::error("Activation email failed: " . $e->getMessage());
+                }
+
+                return response()->json(['message' => "Success! Student activated and parent notified."]);
+            });
+        } catch (\Exception $e) {
+            Log::error("Approval Error: " . $e->getMessage());
+            return response()->json(['message' => 'Action Halted: ' . $e->getMessage()], 500);
+        }
     }
-}
-
 
     public function getPendingPayments()
     {
