@@ -50,45 +50,53 @@ class QuizController extends Controller
 
     public function submitAttempt(Request $request, $id)
 {
+    // 1. Load the attempt and the student profile immediately
     $attempt = QuizAttempt::with('quiz')->findOrFail($id);
-    $student = $request->user();
+    $student = User::with('studentProfile')->findOrFail($request->user()->id);
     
     $score = $request->input('score', 0);
-    $passingScore = $attempt->quiz->passing_score ?? 70; //
+    $passingScore = $attempt->quiz->passing_score ?? 70; 
     $isPassing = $score >= $passingScore;
 
-    // 1. Check if the student has ALREADY passed this specific quiz before this attempt
-    $previousPass = QuizAttempt::where('quiz_id', $attempt->quiz_id)
+    // 🕵️ CRITICAL CHECK: Did this student pass THIS quiz at any point in the past?
+    // We check for any successful attempt that is NOT the current one.
+    $hasPassHistory = QuizAttempt::where('quiz_id', $attempt->quiz_id)
         ->where('student_id', $student->id)
         ->where('passed', true)
-        ->where('id', '!=', $id) // Don't count the current attempt
+        ->where('id', '!=', $id) 
         ->exists();
 
+    // 2. Update the current attempt status
     $attempt->update([
         'completed_at' => now(),
         'score' => $score,
         'passed' => $isPassing,
     ]);
 
-    // 🏆 2. Reward Logic
-    $rewardMessage = "";
-    if ($isPassing) {
-        if (!$previousPass) {
-            // 💰 FIRST TIME PASS: Award coins and points
-            $student->studentProfile->increment('total_points', $score * 5);
-            $student->studentProfile->increment('total_coins', 10);
-            $rewardMessage = "Ẹ kú iṣẹ́! You earned 10 FricaCoins!";
-        } else {
-            // 📚 REPEAT PASS: No new coins, just praise
-            $rewardMessage = "Ẹ dúpẹ́! Great practice, but you've already claimed your coins for this week.";
-        }
+    $coinsEarned = 0;
+    $pointsEarned = 0;
+
+    // 🏆 3. Reward logic: ONLY if passing AND no history of passing
+    if ($isPassing && !$hasPassHistory) {
+        $pointsEarned = $score * 5;
+        $coinsEarned = 10; // Standard reward for 12-week course tasks
+
+        $student->studentProfile->increment('total_points', $pointsEarned);
+        $student->studentProfile->increment('total_coins', $coinsEarned);
+        
+        $message = "Ẹ kú iṣẹ́! You earned $coinsEarned FricaCoins!";
+    } elseif ($isPassing && $hasPassHistory) {
+        $message = "Ẹ dúpẹ́! Great practice, but you've already claimed the coins for this week.";
+    } else {
+        $message = "Ó tọ́ díẹ̀. Review Oluko's notes and try again!";
     }
 
     return response()->json([
         'passed' => $isPassing,
         'score' => $score,
-        'message' => $rewardMessage,
-        'is_first_pass' => !$previousPass
+        'message' => $message,
+        'coins_earned' => $coinsEarned,
+        'is_practice' => $hasPassHistory
     ]);
 }
 
