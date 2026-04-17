@@ -101,29 +101,60 @@ class CourseController extends Controller
     /**
      * 📖 Show a specific course
      */
-    public function show($id)
-    {
-        try {
-            $course = Course::with([
-                'modules' => function($query) {
-                    $query->orderBy('order_index', 'asc');
-                },
-                'modules.lessons'
-            ])->find($id);
+  public function show(Request $request, $id)
+{
+    try {
+        // 1. Fetch the course with its nested modules and lessons
+        $course = Course::with([
+            'modules' => function($query) { $query->orderBy('order_index', 'asc'); },
+            'modules.lessons' => function($query) { $query->orderBy('week_number', 'asc'); }
+        ])->find($id);
 
-            if (!$course) {
-                return response()->json(['message' => 'Course not found'], 404);
-            }
+        if (!$course) return response()->json(['message' => 'Course not found'], 404);
 
-            return response()->json($course);
-            
-        } catch (\Exception $e) {
-            return response()->json([
-                'error' => 'Database Query Error',
-                'message' => $e->getMessage()
-            ], 500);
+        $activeStudentId = $request->header('X-Active-Student-Id') ?: $request->query('student_id');
+
+        if ($activeStudentId) {
+            // 2. Fetch all completed lessons for this student
+            $completions = DB::table('lesson_completions')
+                ->where('student_id', $activeStudentId)
+                ->orderBy('completed_at', 'desc')
+                ->get();
+
+            $completedLessonIds = $completions->pluck('lesson_id')->toArray();
+            $lastCompletion = $completions->first();
+
+            // 3. Map through lessons to apply locking rules
+            $course->modules->each(function ($module) use ($completedLessonIds, $lastCompletion) {
+                $module->lessons->each(function ($lesson) use ($completedLessonIds, $lastCompletion) {
+                    $lesson->is_completed = in_array($lesson->id, $completedLessonIds);
+
+                    // Logic: Week 1 is always open
+                    if ($lesson->week_number == 1) {
+                        $lesson->is_locked = false;
+                    } else {
+                        // Check if the previous week was completed
+                        $previousWeekId = $lesson->week_number - 1; 
+                        $wasPreviousWeekDone = in_array($previousWeekId, $completedLessonIds);
+
+                        // Enforce 7-day rule from the last completion
+                        $canUnlock = $lastCompletion && now()->diffInDays($lastCompletion->completed_at) >= 7;
+
+                        $lesson->is_locked = !$wasPreviousWeekDone || !$canUnlock;
+                        
+                        if ($lesson->is_locked && $lastCompletion) {
+                            $lesson->unlocks_at = \Carbon\Carbon::parse($lastCompletion->completed_at)->addDays(7);
+                        }
+                    }
+                });
+            });
         }
+
+        return response()->json($course);
+    } catch (\Exception $e) {
+        return response()->json(['error' => $e->getMessage()], 500);
     }
+}
 
     /**
      * 🔐 Admin: Store (Cloudinary Integrated)
