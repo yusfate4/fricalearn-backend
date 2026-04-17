@@ -49,41 +49,47 @@ class QuizController extends Controller
     }
 
     public function submitAttempt(Request $request, $id)
-    {
-        $attempt = QuizAttempt::with('quiz')->findOrFail($id);
-        $student = $request->user();
-        
-        $score = $request->input('score', 0);
-        $passingScore = $attempt->quiz->passing_score ?? 70;
-        $isPassing = $score >= $passingScore;
+{
+    $attempt = QuizAttempt::with('quiz')->findOrFail($id);
+    $student = $request->user();
+    
+    $score = $request->input('score', 0);
+    $passingScore = $attempt->quiz->passing_score ?? 70; //
+    $isPassing = $score >= $passingScore;
 
-        // 1. Check if this is a repeat pass
-        $alreadyPassed = QuizAttempt::where('quiz_id', $attempt->quiz_id)
-            ->where('student_id', $student->id)
-            ->where('passed', true)
-            ->where('id', '!=', $id)
-            ->exists();
+    // 1. Check if the student has ALREADY passed this specific quiz before this attempt
+    $previousPass = QuizAttempt::where('quiz_id', $attempt->quiz_id)
+        ->where('student_id', $student->id)
+        ->where('passed', true)
+        ->where('id', '!=', $id) // Don't count the current attempt
+        ->exists();
 
-        $attempt->update([
-            'completed_at' => now(),
-            'score' => $score,
-            'passed' => $isPassing,
-        ]);
+    $attempt->update([
+        'completed_at' => now(),
+        'score' => $score,
+        'passed' => $isPassing,
+    ]);
 
-        // 2. Logic for FricaCoin Awards (Only on first pass)
-        if ($isPassing && !$alreadyPassed) {
-            // Logic to award FricaCoins and Points to the student profile
-            $points = $score * 5; 
-            $student->studentProfile->increment('total_points', $points);
-            $student->studentProfile->increment('total_coins', 10); // Standard award
+    // 🏆 2. Reward Logic
+    $rewardMessage = "";
+    if ($isPassing) {
+        if (!$previousPass) {
+            // 💰 FIRST TIME PASS: Award coins and points
+            $student->studentProfile->increment('total_points', $score * 5);
+            $student->studentProfile->increment('total_coins', 10);
+            $rewardMessage = "Ẹ kú iṣẹ́! You earned 10 FricaCoins!";
+        } else {
+            // 📚 REPEAT PASS: No new coins, just praise
+            $rewardMessage = "Ẹ dúpẹ́! Great practice, but you've already claimed your coins for this week.";
         }
-
-        return response()->json([
-            'message' => $isPassing ? 'Ẹ kú iṣẹ́! You passed!' : 'Ó tọ́ díẹ̀. Keep practicing!',
-            'passed' => $isPassing,
-            'already_passed' => $alreadyPassed,
-            'score' => $score,
-            'attempt' => $attempt
-        ]);
     }
+
+    return response()->json([
+        'passed' => $isPassing,
+        'score' => $score,
+        'message' => $rewardMessage,
+        'is_first_pass' => !$previousPass
+    ]);
+}
+
 }
