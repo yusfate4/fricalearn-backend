@@ -58,7 +58,7 @@ class LessonController extends Controller
     /**
      * 🚀 COMPLETE LESSON: Award XP, Record Completion, and Notify Parent
      */
-    public function complete(Request $request, $id)
+   public function complete(Request $request, $id)
 {
     $user = $request->user();
     $targetUserId = $request->header('X-Active-Student-Id') ?: $user->id;
@@ -68,7 +68,7 @@ class LessonController extends Controller
         'points' => 'nullable|integer',
     ]);
 
-    $lesson = Lesson::findOrFail($id); // Get lesson title for the description
+    $lesson = Lesson::findOrFail($id); 
 
     $profile = StudentProfile::firstOrCreate(
         ['user_id' => $targetUserId],
@@ -81,10 +81,10 @@ class LessonController extends Controller
     // 🏆 1. Update Profile (Lifetime Total)
     $profile->increment('total_points', $pointsAwarded);
     if ($passed) {
-        $profile->increment('total_coins', $pointsAwarded);
+        $profile->increment('total_coins', 10); // Standard award for passing
     }
 
-    // 💰 1.5. THE FIX: Record Transaction (For Weekly Digest Summing)
+    // 💰 2. Record Transaction (For Gamification Logs)
     DB::table('gamification_transactions')->insert([
         'user_id'     => $targetUserId,
         'points'      => $pointsAwarded,
@@ -94,7 +94,7 @@ class LessonController extends Controller
         'updated_at'  => now()
     ]);
 
-    // 📊 2. Update Progress Record (General Status)
+    // 📊 3. Update Progress Record (Student Dashboard)
     $progress = ProgressRecord::updateOrCreate(
         ['user_id' => $targetUserId, 'lesson_id' => $id],
         [
@@ -104,29 +104,26 @@ class LessonController extends Controller
         ]
     );
 
-    // 🔏 3. Record in lesson_completions for the Weekly Digest Count
+    // 🔏 4. THE FIX: Correct column name for sequential locking
+    // Changed 'user_id' to 'student_id' to match your migration
     DB::table('lesson_completions')->updateOrInsert(
-        ['user_id' => $targetUserId, 'lesson_id' => $id],
-        ['created_at' => now(), 'updated_at' => now()]
+        ['student_id' => $targetUserId, 'lesson_id' => $id], 
+        [
+            'score' => $validated['score'],
+            'completed_at' => now(),
+            'updated_at' => now()
+        ]
     );
 
-    // 🔔 4. Notify Parent (Milestone)
-    $student = User::find($targetUserId);
-    if ($student && $student->parent_id) {
-        $parent = User::find($student->parent_id);
-        if ($parent) {
-            // Optional: Send instant notification here if desired
-        }
-    }
-
     return response()->json([
-        'message'      => $passed ? 'O ku ise! (Well done!)' : 'Keep trying!',
+        'message'      => $passed ? 'Ẹ kú iṣẹ́! (Well done!)' : 'Keep trying!',
         'score'        => $progress->score,
         'total_points' => $profile->total_points,
         'total_coins'  => $profile->total_coins,
         'passed'       => $passed
     ]);
 }
+
     /**
      * Admin: Create a new lesson
      */
