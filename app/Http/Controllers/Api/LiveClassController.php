@@ -54,11 +54,24 @@ class LiveClassController extends Controller
     /**
      * 🔍 3. SHOW SINGLE CLASS
      */
-    public function show($id)
-    {
-        $liveClass = LiveClass::with(['tutor', 'lesson'])->findOrFail($id);
+   public function show($id)
+{
+    try {
+        // 🕵️ Find the class by ID
+        $liveClass = LiveClass::find($id);
+
+        if (!$liveClass) {
+            return response()->json([
+                'error' => 'Classroom not found',
+                'message' => 'The scheduled room for this lesson does not exist yet.'
+            ], 404);
+        }
+
         return response()->json($liveClass);
+    } catch (\Exception $e) {
+        return response()->json(['error' => $e->getMessage()], 500);
     }
+}
 
     /**
      * 🚀 4. STORE NEW CLASS

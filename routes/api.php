@@ -158,6 +158,7 @@ Route::middleware('auth:sanctum')->group(function () {
     */
     Route::middleware(['verified'])->group(function () {
         Route::get('/live-classes', [LiveClassController::class, 'index']); // Fixes Dashboard Sync
+        Route::get('/live-classes/{id}', [LiveClassController::class, 'show']);
         Route::get('/courses', [CourseController::class, 'index']);
         Route::get('/courses/{id}', [CourseController::class, 'show']);
         
