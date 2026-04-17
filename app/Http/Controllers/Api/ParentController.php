@@ -56,9 +56,6 @@ class ParentController extends Controller
             // Find the specific enrollment for this child
             $enrollment = $activeEnrollments->where('student_id', $child->id)->first();
             
-            // Priority 1: Current Course Title
-            // Priority 2: Profile language preference
-            // Priority 3: Fallback
             if ($enrollment && $enrollment->course) {
                 $child->current_track = $enrollment->course->title; 
             } else {
@@ -69,7 +66,7 @@ class ParentController extends Controller
 
         return response()->json([
             'parent_name'        => $parent->name,
-            'active_enrollments' => $activeEnrollments, // React uses this to enable the "Enter" button
+            'active_enrollments' => $activeEnrollments, 
             'pending_payments'   => $pendingPayments,
             'children'           => $childrenWithTracks, 
             'stats' => [
@@ -134,7 +131,6 @@ class ParentController extends Controller
                 'rank' => 'Akeko'
             ]);
 
-            // Ensure they are linked via the pivot table too
             $request->user()->children()->syncWithoutDetaching([
                 $student->id => ['relationship' => $validated['relationship'] ?? 'Parent']
             ]);
@@ -171,24 +167,28 @@ class ParentController extends Controller
     }
 
     /**
-     * 👤 Get individual child profile
+     * 👤 THE FIX: Get individual child profile (For Dashboard Sync)
+     * Renamed from getActiveStudentProfile to match api.php and React request
      */
-    public function getActiveStudentProfile($id)
+    public function getActiveStudent($id)
     {
-        $parent = auth()->user();
-        $childIds = $this->getLinkedChildIds($parent);
+        try {
+            $parent = auth()->user();
+            $childIds = $this->getLinkedChildIds($parent);
 
-        if (!in_array($id, $childIds) && $parent->role !== 'admin') {
-            return response()->json(['message' => 'Unauthorized'], 403);
+            // Security check: Make sure this parent owns this child
+            if (!in_array($id, $childIds) && $parent->role !== 'admin') {
+                return response()->json(['message' => 'Unauthorized access to this student profile.'], 403);
+            }
+
+            // Fetch the student with their profile and return the whole object
+            $student = User::with('studentProfile')->findOrFail($id);
+
+            return response()->json($student);
+            
+        } catch (\Exception $e) {
+            return response()->json(['error' => 'Dashboard Sync Error: ' . $e->getMessage()], 500);
         }
-
-        $student = User::with('studentProfile')->findOrFail($id);
-
-        return response()->json([
-            'id' => $student->id,
-            'name' => $student->name,
-            'student_profile' => $student->studentProfile
-        ]);
     }
 
     /**

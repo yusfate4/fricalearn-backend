@@ -147,7 +147,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/register-child', [ParentController::class, 'registerChild']);
         Route::post('/submit-payment', [PaymentController::class, 'submitPayment']);
         Route::get('/child-stats/{childId}', [ParentAnalyticsController::class, 'getChildStats']);
-        Route::get('/courses', [CourseController::class, 'index']); // Fixes 404 in course selection
+        Route::get('/courses', [CourseController::class, 'index']); 
+        Route::get('/active-student/{id}', [ParentController::class, 'getActiveStudent']);
     });
 
     /*
