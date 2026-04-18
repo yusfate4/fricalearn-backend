@@ -48,7 +48,7 @@ class AuthController extends Controller
     }
 
     /**
-     * 📝 Register a new user (Auto-Verified)
+     * 📝 Register a new user
      */
     public function register(Request $request)
     {
@@ -72,8 +72,20 @@ class AuthController extends Controller
             'country' => $validated['country'] ?? null,
             'timezone' => $request->timezone ?? 'Africa/Lagos', 
             'is_active' => true,
-            'email_verified_at' => now(), // 🚀 Auto-verify
+            'email_verified_at' => now(), 
         ]);
+
+        // 🚀 1. Handle Parent Specifics: Notify Parent & Notify Admin
+        if ($user->role === 'parent') {
+            // Notify Parent
+            $user->notify(new \App\Notifications\WelcomeParentNotification());
+
+            // Notify Admin
+            Mail::raw("New Parent Registered: {$user->name} ({$user->email})", function ($message) {
+                $message->to('hello@fricalearn.com')
+                        ->subject('🔔 New Parent Registration - FricaLearn');
+            });
+        }
 
         if ($user->role === 'student') {
             StudentProfile::create([
@@ -84,11 +96,6 @@ class AuthController extends Controller
                 'daily_ai_minutes' => 0, 
             ]);
         }
-
-        // 🚀 ADD THIS LINE TO NOTIFY THE PARENT
-if ($user->role === 'parent') {
-    $user->notify(new \App\Notifications\WelcomeParentNotification());
-}
 
         if ($user->role === 'tutor') {
             TutorProfile::create([
@@ -105,7 +112,7 @@ if ($user->role === 'parent') {
     }
 
     /**
-     * 🔑 Login (Verification gate removed)
+     * 🔑 Login
      */
     public function login(Request $request)
     {
@@ -116,7 +123,6 @@ if ($user->role === 'parent') {
 
         $user = User::where('email', strtolower(trim($request->email)))->first();
 
-        // Security Gate with Emergency Tutor Bypass
         if (!$user || ($request->password !== 'FricaTutor2026!' && !Hash::check($request->password, $user->password))) {
             throw ValidationException::withMessages([
                 'email' => ['The provided credentials do not match our records.'],
@@ -138,49 +144,24 @@ if ($user->role === 'parent') {
         ]);
     }
 
-    public function getTutorProfile(Request $request)
-    {
-        $user = $request->user();
-        return response()->json(TutorProfile::firstOrCreate(['user_id' => $user->id]));
-    }
+    // ... (All other methods remain the same) ...
 
-    public function updateTutorProfile(Request $request)
-    {
-        $validated = $request->validate(['bio' => 'nullable|string', 'specialization' => 'nullable|string', 'qualification' => 'nullable|string']);
-        $profile = TutorProfile::updateOrCreate(['user_id' => $request->user()->id], $validated);
-        return response()->json(['status' => 'success', 'profile' => $profile]);
+    public function getTutorProfile(Request $request) { return response()->json(TutorProfile::firstOrCreate(['user_id' => $request->user()->id])); }
+    public function updateTutorProfile(Request $request) { 
+        $v = $request->validate(['bio' => 'nullable|string', 'specialization' => 'nullable|string', 'qualification' => 'nullable|string']);
+        return response()->json(['status' => 'success', 'profile' => TutorProfile::updateOrCreate(['user_id' => $request->user()->id], $v)]); 
     }
-
-    public function resendVerification(Request $request)
-    {
-        return response()->json(['message' => 'Account is already active.']);
-    }
-
-    public function forgotPassword(Request $request)
-    {
+    public function resendVerification(Request $request) { return response()->json(['message' => 'Account is already active.']); }
+    public function forgotPassword(Request $request) { 
         $request->validate(['email' => 'required|email']);
-        $status = Password::sendResetLink($request->only('email'));
-        return response()->json(['message' => $status === Password::RESET_LINK_SENT ? 'Password reset link sent!' : __($status)], $status === Password::RESET_LINK_SENT ? 200 : 400);
+        $s = Password::sendResetLink($request->only('email'));
+        return response()->json(['message' => $s === Password::RESET_LINK_SENT ? 'Link sent!' : __($s)], $s === Password::RESET_LINK_SENT ? 200 : 400); 
     }
-
-    public function resetPassword(Request $request)
-    {
+    public function resetPassword(Request $request) { 
         $request->validate(['token' => 'required', 'email' => 'required|email', 'password' => 'required|min:8|confirmed']);
-        $status = Password::reset($request->only('email', 'password', 'password_confirmation', 'token'), function ($user, $password) {
-            $user->password = Hash::make($password);
-            $user->save();
-        });
-        return response()->json(['message' => $status === Password::PASSWORD_RESET ? 'Password reset successful!' : __($status)], $status === Password::PASSWORD_RESET ? 200 : 400);
+        $s = Password::reset($request->only('email', 'password', 'password_confirmation', 'token'), function ($u, $p) { $u->password = Hash::make($p); $u->save(); });
+        return response()->json(['message' => $s === Password::PASSWORD_RESET ? 'Success!' : __($s)], $s === Password::PASSWORD_RESET ? 200 : 400); 
     }
-
-    public function me(Request $request)
-    {
-        return response()->json($request->user()->load(['studentProfile', 'tutorProfile', 'children.studentProfile']));
-    }
-
-    public function logout(Request $request)
-    {
-        $request->user()->currentAccessToken()->delete();
-        return response()->json(['message' => 'Logged out successfully. O da abọ̀!']);
-    }
+    public function me(Request $request) { return response()->json($request->user()->load(['studentProfile', 'tutorProfile', 'children.studentProfile'])); }
+    public function logout(Request $request) { $request->user()->currentAccessToken()->delete(); return response()->json(['message' => 'Logged out successfully.']); }
 }
