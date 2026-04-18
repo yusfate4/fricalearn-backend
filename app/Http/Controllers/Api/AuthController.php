@@ -9,19 +9,15 @@ use App\Models\TutorProfile;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Password; 
-use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
-use Illuminate\Auth\Events\Registered; 
 use Illuminate\Support\Str;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Log;
 
 class AuthController extends Controller
 {
     /**
-     * 📥 NEW: Handle Landing Page Contact Form
-     * Sends inquiries to hello@fricalearn.com
+     * 📥 Handle Landing Page Contact Form
      */
     public function handleContactForm(Request $request)
     {
@@ -52,7 +48,7 @@ class AuthController extends Controller
     }
 
     /**
-     * 📝 Register a new user
+     * 📝 Register a new user (Auto-Verified)
      */
     public function register(Request $request)
     {
@@ -62,13 +58,9 @@ class AuthController extends Controller
             'password' => 'required|string|min:8|confirmed', 
             'role' => 'required|in:student,parent,tutor',
             'country' => 'nullable|string|max:100',
-            
-            // Student-specific
             'date_of_birth' => 'required_if:role,student|date',
             'grade_level' => 'required_if:role,student|string',
             'learning_language' => 'required_if:role,student|in:Yoruba,Hausa,Igbo',
-
-            // Tutor-specific
             'specialization' => 'required_if:role,tutor|string|max:255',
         ]);
 
@@ -80,6 +72,7 @@ class AuthController extends Controller
             'country' => $validated['country'] ?? null,
             'timezone' => $request->timezone ?? 'Africa/Lagos', 
             'is_active' => true,
+            'email_verified_at' => now(), // 🚀 Auto-verify
         ]);
 
         if ($user->role === 'student') {
@@ -100,16 +93,14 @@ class AuthController extends Controller
             ]);
         }
 
-        event(new Registered($user));
-
         return response()->json([
             'status' => 'success',
-            'message' => 'Registration successful! Oluko has sent a verification link to ' . $user->email,
+            'message' => 'Registration successful! Welcome to FricaLearn.',
         ], 201);
     }
 
     /**
-     * 🔑 Login with Verification & Bypass
+     * 🔑 Login (Verification gate removed)
      */
     public function login(Request $request)
     {
@@ -127,14 +118,6 @@ class AuthController extends Controller
             ]);
         }
 
-        if (!$user->hasVerifiedEmail()) {
-            return response()->json([
-                'status' => 'unverified',
-                'message' => 'Your email address is not verified.',
-                'email' => $user->email
-            ], 403); 
-        }
-
         if (!$user->is_active) {
             return response()->json(['message' => 'Your account is suspended.'], 403);
         }
@@ -150,121 +133,46 @@ class AuthController extends Controller
         ]);
     }
 
-    /**
-     * 👤 Get the Tutor Profile (Staff Only)
-     */
     public function getTutorProfile(Request $request)
     {
-        try {
-            $user = $request->user();
-
-            $profile = TutorProfile::firstOrCreate(
-                ['user_id' => $user->id],
-                [
-                    'specialization' => 'African Culture & Language',
-                    'bio' => 'Awaiting professional bio update...',
-                    'is_verified' => false
-                ]
-            );
-
-            return response()->json($profile);
-        } catch (\Exception $e) {
-            Log::error("Tutor Profile Error: " . $e->getMessage());
-            return response()->json(['error' => 'Could not retrieve tutor profile.'], 500);
-        }
+        $user = $request->user();
+        return response()->json(TutorProfile::firstOrCreate(['user_id' => $user->id]));
     }
 
-    /**
-     * 💾 Update Tutor Profile
-     */
     public function updateTutorProfile(Request $request)
     {
-        $validated = $request->validate([
-            'bio' => 'nullable|string',
-            'specialization' => 'nullable|string',
-            'qualification' => 'nullable|string',
-        ]);
-
-        $user = $request->user();
-
-        $profile = TutorProfile::updateOrCreate(
-            ['user_id' => $user->id],
-            $validated
-        );
-
-        return response()->json([
-            'status' => 'success',
-            'message' => 'Profile updated successfully!',
-            'profile' => $profile
-        ]);
+        $validated = $request->validate(['bio' => 'nullable|string', 'specialization' => 'nullable|string', 'qualification' => 'nullable|string']);
+        $profile = TutorProfile::updateOrCreate(['user_id' => $request->user()->id], $validated);
+        return response()->json(['status' => 'success', 'profile' => $profile]);
     }
 
-    /**
-     * 📩 Resend Verification
-     */
     public function resendVerification(Request $request)
     {
-        $user = User::where('email', strtolower(trim($request->email)))->first();
-        if (!$user) return response()->json(['message' => 'Account not found.'], 404);
-        if ($user->hasVerifiedEmail()) return response()->json(['message' => 'Already verified.']);
-
-        $user->sendEmailVerificationNotification();
-        return response()->json(['message' => 'A fresh verification link has been sent!']);
+        return response()->json(['message' => 'Account is already active.']);
     }
 
-    /**
-     * 📩 Forgot Password
-     */
     public function forgotPassword(Request $request)
     {
         $request->validate(['email' => 'required|email']);
         $status = Password::sendResetLink($request->only('email'));
-
-        return $status === Password::RESET_LINK_SENT
-            ? response()->json(['message' => 'Password reset link sent!'])
-            : response()->json(['message' => __($status)], 400);
+        return response()->json(['message' => $status === Password::RESET_LINK_SENT ? 'Password reset link sent!' : __($status)], $status === Password::RESET_LINK_SENT ? 200 : 400);
     }
 
-    /**
-     * 🔄 Reset Password
-     */
     public function resetPassword(Request $request)
     {
-        $request->validate([
-            'token' => 'required',
-            'email' => 'required|email',
-            'password' => 'required|min:8|confirmed',
-        ]);
-
-        $status = Password::reset(
-            $request->only('email', 'password', 'password_confirmation', 'token'),
-            function ($user, $password) {
-                $user->password = Hash::make($password);
-                $user->setRememberToken(Str::random(60));
-                $user->save();
-            }
-        );
-
-        return $status === Password::PASSWORD_RESET
-            ? response()->json(['message' => 'Password reset successful!'], 200)
-            : response()->json(['message' => __($status)], 400);
+        $request->validate(['token' => 'required', 'email' => 'required|email', 'password' => 'required|min:8|confirmed']);
+        $status = Password::reset($request->only('email', 'password', 'password_confirmation', 'token'), function ($user, $password) {
+            $user->password = Hash::make($password);
+            $user->save();
+        });
+        return response()->json(['message' => $status === Password::PASSWORD_RESET ? 'Password reset successful!' : __($status)], $status === Password::PASSWORD_RESET ? 200 : 400);
     }
 
-    /**
-     * 👤 Get Auth User
-     */
     public function me(Request $request)
     {
-        return response()->json($request->user()->load([
-            'studentProfile', 
-            'tutorProfile',
-            'children.studentProfile'
-        ]));
+        return response()->json($request->user()->load(['studentProfile', 'tutorProfile', 'children.studentProfile']));
     }
 
-    /**
-     * 🚪 Logout
-     */
     public function logout(Request $request)
     {
         $request->user()->currentAccessToken()->delete();

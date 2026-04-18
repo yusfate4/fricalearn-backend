@@ -2,7 +2,7 @@
 
 namespace App\Models;
 
-use Illuminate\Contracts\Auth\MustVerifyEmail;
+// 🚀 REMOVED: MustVerifyEmail interface
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -11,7 +11,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 
-class User extends Authenticatable implements MustVerifyEmail
+class User extends Authenticatable
 {
     use HasApiTokens, HasFactory, Notifiable;
 
@@ -54,24 +54,6 @@ class User extends Authenticatable implements MustVerifyEmail
      * Automatically append these attributes to JSON responses.
      */
     protected $appends = ['admin_display_name'];
-
-    /*
-    |--------------------------------------------------------------------------
-    | Verification Helpers
-    |--------------------------------------------------------------------------
-    */
-
-    public function hasVerifiedEmail(): bool
-    {
-        return ! is_null($this->email_verified_at);
-    }
-
-    public function markEmailAsVerified(): bool
-    {
-        return $this->forceFill([
-            'email_verified_at' => $this->freshTimestamp(),
-        ])->save();
-    }
 
     /*
     |--------------------------------------------------------------------------
@@ -151,9 +133,6 @@ class User extends Authenticatable implements MustVerifyEmail
         return $this->role === 'tutor';
     }
 
-    /**
-     * Check if user is either an Admin or a Tutor (Staff access).
-     */
     public function isStaff(): bool
     {
         return $this->isAdmin() || $this->isTutor();
@@ -200,10 +179,5 @@ class User extends Authenticatable implements MustVerifyEmail
         }
         
         return $this->name;
-    }
-
-    public function getEmailForPasswordReset(): string
-    {
-        return $this->email;
     }
 }
