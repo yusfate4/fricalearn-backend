@@ -14,6 +14,10 @@ use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Log;
 
+// 🚀 Notification Imports
+use App\Notifications\WelcomeParentNotification;
+use App\Notifications\AdminAlertNotification;
+
 class AuthController extends Controller
 {
     /**
@@ -77,10 +81,17 @@ class AuthController extends Controller
 
         // 🚀 Handle Parent Specifics
         if ($user->role === 'parent') {
-            $user->notify(new \App\Notifications\WelcomeParentNotification());
-            Mail::raw("New Parent Registered: {$user->name} ({$user->email})", function ($message) {
-                $message->to('hello@fricalearn.com')->subject('🔔 New Parent Registration - FricaLearn');
-            });
+            // 1. Notify Parent
+            $user->notify(new WelcomeParentNotification());
+
+            // 2. Notify Admin via Notification System
+            $admin = User::where('is_admin', 1)->first();
+            if ($admin) {
+                $admin->notify(new AdminAlertNotification(
+                    '🔔 New Parent Registration',
+                    "A new parent, {$user->name} ({$user->email}), has just joined FricaLearn."
+                ));
+            }
         }
 
         // Student Profiles
@@ -133,54 +144,23 @@ class AuthController extends Controller
         return response()->json(['status' => 'success', 'user' => $user, 'token' => $token]);
     }
 
-    /**
-     * 👤 Get Tutor Profile
-     */
-    public function getTutorProfile(Request $request)
-    {
-        return response()->json(TutorProfile::firstOrCreate(['user_id' => $request->user()->id]));
-    }
-
-    /**
-     * 💾 Update Tutor Profile
-     */
-    public function updateTutorProfile(Request $request)
-    {
+    public function getTutorProfile(Request $request) { return response()->json(TutorProfile::firstOrCreate(['user_id' => $request->user()->id])); }
+    public function updateTutorProfile(Request $request) { 
         $v = $request->validate(['bio' => 'nullable|string', 'specialization' => 'nullable|string', 'qualification' => 'nullable|string']);
         $profile = TutorProfile::updateOrCreate(['user_id' => $request->user()->id], $v);
-        return response()->json(['status' => 'success', 'profile' => $profile]);
+        return response()->json(['status' => 'success', 'profile' => $profile]); 
     }
-
-    public function resendVerification(Request $request)
-    {
-        return response()->json(['message' => 'Account is already active.']);
-    }
-
-    public function forgotPassword(Request $request)
-    {
+    public function resendVerification(Request $request) { return response()->json(['message' => 'Account is already active.']); }
+    public function forgotPassword(Request $request) { 
         $request->validate(['email' => 'required|email']);
         $s = Password::sendResetLink($request->only('email'));
         return response()->json(['message' => $s === Password::RESET_LINK_SENT ? 'Link sent!' : __($s)], $s === Password::RESET_LINK_SENT ? 200 : 400); 
     }
-
-    public function resetPassword(Request $request)
-    {
+    public function resetPassword(Request $request) { 
         $request->validate(['token' => 'required', 'email' => 'required|email', 'password' => 'required|min:8|confirmed']);
-        $s = Password::reset($request->only('email', 'password', 'password_confirmation', 'token'), function ($u, $p) {
-            $u->password = Hash::make($p);
-            $u->save();
-        });
+        $s = Password::reset($request->only('email', 'password', 'password_confirmation', 'token'), function ($u, $p) { $u->password = Hash::make($p); $u->save(); });
         return response()->json(['message' => $s === Password::PASSWORD_RESET ? 'Success!' : __($s)], $s === Password::PASSWORD_RESET ? 200 : 400); 
     }
-
-    public function me(Request $request)
-    {
-        return response()->json($request->user()->load(['studentProfile', 'tutorProfile', 'children.studentProfile']));
-    }
-
-    public function logout(Request $request)
-    {
-        $request->user()->currentAccessToken()->delete();
-        return response()->json(['message' => 'Logged out successfully. O da abọ̀!']);
-    }
+    public function me(Request $request) { return response()->json($request->user()->load(['studentProfile', 'tutorProfile', 'children.studentProfile'])); }
+    public function logout(Request $request) { $request->user()->currentAccessToken()->delete(); return response()->json(['message' => 'Logged out successfully. O da abọ̀!']); }
 }

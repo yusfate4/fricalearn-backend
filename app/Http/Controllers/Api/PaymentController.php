@@ -14,9 +14,11 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Cloudinary\Cloudinary;
 
+// 🚀 Notifications
 use App\Notifications\StudentAccountActivated;
 use App\Notifications\NewPaymentSubmitted;
 use App\Notifications\PaymentReceivedParent;
+use App\Notifications\AdminAlertNotification;
 
 class PaymentController extends Controller
 {
@@ -69,19 +71,21 @@ class PaymentController extends Controller
                     'status'       => 'pending',
                 ]);
 
-                foreach (User::where('role', 'admin')->orWhere('is_admin', 1)->get() as $admin) {
-                    $admin->notify(new NewPaymentSubmitted($payment));
+                // 🚀 Notify Admin via Unified Notification System
+                $admin = User::where('is_admin', 1)->first();
+                if ($admin) {
+                    $admin->notify(new AdminAlertNotification(
+                        '💰 New Payment Submitted',
+                        "Parent {$parent->name} submitted a payment for child: {$request->child_name}. Amount: {$request->amount} {$request->currency}."
+                    ));
                 }
-
-                Mail::raw("New payment submitted by Parent: {$parent->name} for child: {$request->child_name}. Amount: {$request->amount}.", function ($message) {
-                    $message->to('hello@fricalearn.com')->subject('💰 New Payment Pending Verification');
-                });
 
                 $parent->notify(new PaymentReceivedParent($payment));
 
-                return response()->json(['status' => 'success', 'message' => 'Receipt submitted!'], 201);
+                return response()->json(['status' => 'success', 'message' => 'Receipt submitted successfully!'], 201);
             });
         } catch (\Exception $e) {
+            Log::error("Payment Submission Error: " . $e->getMessage());
             return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
         }
     }
@@ -133,7 +137,7 @@ class PaymentController extends Controller
     }
 
     /**
-     * 📜 Fetch Payment History (Approved/Rejected)
+     * 📜 Fetch Payment History
      */
     public function getPaymentHistory()
     {
