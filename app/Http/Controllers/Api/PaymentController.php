@@ -11,10 +11,9 @@ use App\Models\User;
 use App\Models\StudentProfile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Mail; // 🚀 Added for Admin Alerts
+use Illuminate\Support\Facades\Mail;
 use Cloudinary\Cloudinary;
 
-// 🚀 NOTIFICATIONS
 use App\Notifications\StudentAccountActivated;
 use App\Notifications\NewPaymentSubmitted;
 use App\Notifications\PaymentReceivedParent;
@@ -22,7 +21,7 @@ use App\Notifications\PaymentReceivedParent;
 class PaymentController extends Controller
 {
     /**
-     * 💳 Parent: Submit payment, notify Admin & Parent
+     * 💳 Parent: Submit payment
      */
     public function submitPayment(Request $request)
     {
@@ -38,42 +37,27 @@ class PaymentController extends Controller
 
         try {
             return DB::transaction(function () use ($request, $parent) {
-                
                 $student = User::firstOrCreate(
-                    [
-                        'name' => trim($request->child_name), 
-                        'parent_id' => $parent->id,
-                        'role' => 'student'
-                    ],
+                    ['name' => trim($request->child_name), 'parent_id' => $parent->id, 'role' => 'student'],
                     [
                         'email' => strtolower(str_replace(' ', '', $request->child_name)) . '_' . rand(100, 999) . '@fricalearn.com',
                         'password' => bcrypt('student123'),
                         'is_admin' => 0,
                         'is_active' => 0, 
-                        'email_verified_at' => now(), // Auto-verify linked student
+                        'email_verified_at' => now(), 
                     ]
                 );
 
-                // Cloudinary Upload
-                try {
-                    $cloudinary = new Cloudinary([
-                        'cloud' => [
-                            'cloud_name' => config('services.cloudinary.cloud_name') ?? env('CLOUDINARY_CLOUD_NAME'),
-                            'api_key'    => config('services.cloudinary.api_key') ?? env('CLOUDINARY_API_KEY'),
-                            'api_secret' => config('services.cloudinary.api_secret') ?? env('CLOUDINARY_API_SECRET'),
-                        ],
-                    ]);
+                $cloudinary = new Cloudinary([
+                    'cloud' => [
+                        'cloud_name' => config('services.cloudinary.cloud_name') ?? env('CLOUDINARY_CLOUD_NAME'),
+                        'api_key'    => config('services.cloudinary.api_key') ?? env('CLOUDINARY_API_KEY'),
+                        'api_secret' => config('services.cloudinary.api_secret') ?? env('CLOUDINARY_API_SECRET'),
+                    ],
+                ]);
 
-                    $upload = $cloudinary->uploadApi()->upload(
-                        $request->file('receipt')->getRealPath(),
-                        ['folder' => 'fricalearn/payments/receipts']
-                    );
-                    $receiptUrl = $upload['secure_url'];
-                } catch (\Exception $e) {
-                    Log::error("Cloudinary Upload Error: " . $e->getMessage());
-                    throw new \Exception("Receipt upload failed.");
-                }
-
+                $upload = $cloudinary->uploadApi()->upload($request->file('receipt')->getRealPath(), ['folder' => 'fricalearn/payments/receipts']);
+                
                 $payment = EnrollmentPayment::create([
                     'parent_id'    => $parent->id,
                     'student_id'   => $student->id, 
@@ -81,34 +65,24 @@ class PaymentController extends Controller
                     'child_name'   => trim($request->child_name),
                     'amount'       => $request->amount,
                     'currency'     => $request->currency,
-                    'receipt_path' => $receiptUrl,
+                    'receipt_path' => $upload['secure_url'],
                     'status'       => 'pending',
                 ]);
 
-                // 🔔 4a. NOTIFY ADMINS (Dashboard Notification + Email Alert)
-                $admins = User::where('role', 'admin')->orWhere('is_admin', 1)->get();
-                foreach ($admins as $admin) {
+                foreach (User::where('role', 'admin')->orWhere('is_admin', 1)->get() as $admin) {
                     $admin->notify(new NewPaymentSubmitted($payment));
                 }
 
-                // 🚀 ADDED: Direct Email Alert to hello@fricalearn.com
-                Mail::raw("New payment submitted by Parent: {$parent->name} for child: {$request->child_name}. Amount: {$request->amount} {$request->currency}. Please check the Admin Dashboard to verify.", function ($message) {
-                    $message->to('hello@fricalearn.com')
-                            ->subject('💰 New Payment Pending Verification - FricaLearn');
+                Mail::raw("New payment submitted by Parent: {$parent->name} for child: {$request->child_name}. Amount: {$request->amount}.", function ($message) {
+                    $message->to('hello@fricalearn.com')->subject('💰 New Payment Pending Verification');
                 });
 
-                // 🔔 4b. NOTIFY PARENT
                 $parent->notify(new PaymentReceivedParent($payment));
 
-                return response()->json([
-                    'status' => 'success',
-                    'message' => 'Receipt submitted! Oluko has notified the Admin for verification.',
-                    'payment_id' => $payment->id
-                ], 201);
+                return response()->json(['status' => 'success', 'message' => 'Receipt submitted!'], 201);
             });
         } catch (\Exception $e) {
-            Log::error("Payment Submission 500: " . $e->getMessage());
-            return response()->json(['status' => 'error', 'message' => 'Action Halted: ' . $e->getMessage()], 500);
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
         }
     }
 
@@ -117,9 +91,57 @@ class PaymentController extends Controller
      */
     public function approvePayment(Request $request, $id)
     {
-        // ... (Keep your existing approval logic here) ...
-        // Ensure you have similar Mail::raw alert here if you want to notify admins upon approval
+        $payment = EnrollmentPayment::findOrFail($id);
+        
+        return DB::transaction(function () use ($payment) {
+            $student = User::findOrFail($payment->student_id);
+            $student->update(['is_active' => 1]);
+            
+            $payment->update(['status' => 'approved', 'approved_at' => now()]);
+
+            CourseEnrollment::updateOrCreate(
+                ['course_id' => $payment->course_id, 'student_id' => $student->id],
+                ['status' => 'active', 'enrolled_at' => now(), 'expires_at' => now()->addDays(365)]
+            );
+
+            return response()->json(['message' => "Success! Student activated."]);
+        });
     }
 
-    // ... (Keep existing history/rejection methods) ...
+    /**
+     * ❌ Admin: Reject Payment
+     */
+    public function rejectPayment($id)
+    {
+        $payment = EnrollmentPayment::findOrFail($id);
+        $payment->update(['status' => 'rejected']);
+        return response()->json(['message' => 'Payment rejected.']);
+    }
+
+    /**
+     * 📊 Fetch Pending Payments
+     */
+    public function getPendingPayments()
+    {
+        return response()->json(
+            EnrollmentPayment::with(['parent:id,name,email', 'course:id,title'])
+                ->where('status', 'pending')
+                ->whereNotNull('parent_id')
+                ->latest()
+                ->get()
+        );
+    }
+
+    /**
+     * 📜 Fetch Payment History (Approved/Rejected)
+     */
+    public function getPaymentHistory()
+    {
+        return response()->json(
+            EnrollmentPayment::with(['parent:id,name', 'course:id,title'])
+                ->whereIn('status', ['approved', 'rejected'])
+                ->latest()
+                ->get()
+        );
+    }
 }
