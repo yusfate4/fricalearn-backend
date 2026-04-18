@@ -85,6 +85,11 @@ class AuthController extends Controller
             ]);
         }
 
+        // 🚀 ADD THIS LINE TO NOTIFY THE PARENT
+if ($user->role === 'parent') {
+    $user->notify(new \App\Notifications\WelcomeParentNotification());
+}
+
         if ($user->role === 'tutor') {
             TutorProfile::create([
                 'user_id' => $user->id,
