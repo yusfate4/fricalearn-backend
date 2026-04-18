@@ -24,12 +24,13 @@ class StudentAccountActivated extends Notification
         return ['mail'];
     }
 
- public function toMail($notifiable)
+public function toMail($notifiable)
 {
     return (new \Illuminate\Notifications\Messages\MailMessage)
         ->subject('Great News! Your Child’s Learning Track is Active 🚀')
         ->greeting('Ẹ n lẹ́, ' . $notifiable->name . '!')
-        ->line('Great news! We have verified your payment for the **' . $this->trackName . '** track.')
+        // 🚀 CHANGED $this->trackName TO $this->courseName
+        ->line('Great news! We have verified your payment for the **' . $this->courseName . '** track.')
         ->line('Your child\'s learning account has been officially activated. They can now begin their journey into African culture and language through the parent portal.')
         
         ->line('**How to Start Learning:**')
