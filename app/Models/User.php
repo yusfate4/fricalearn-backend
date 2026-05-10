@@ -180,4 +180,11 @@ class User extends Authenticatable
         
         return $this->name;
     }
+
+    public function externalSubjects()
+{
+    return $this->belongsToMany(ExternalSubject::class, 'user_external_subject_enrollments', 'user_id', 'external_subject_id')
+                ->withPivot('enrolled_at', 'progress_percentage')
+                ->withTimestamps();
+}
 }
