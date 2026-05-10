@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Services\AutoEnrollmentService;
 use Illuminate\Http\Request;
 use App\Models\EnrollmentPayment;
 use App\Models\CourseEnrollment; 
@@ -96,73 +97,98 @@ class PaymentController extends Controller
   /**
      * ✅ Admin: Approve Payment & Sync Parent-Child Relationship
      */
-    public function approvePayment(Request $request, $id)
-    {
-        $user = $request->user();
-        // Staff check
-        if (!$user || ($user->role !== 'admin' && (int)$user->is_admin !== 1 && $user->role !== 'tutor')) {
-            return response()->json(['message' => 'Unauthorized.'], 403);
-        }
-
-        $payment = EnrollmentPayment::findOrFail($id);
-
-        try {
-            return DB::transaction(function () use ($payment) {
-                // 1. Find Student and Parent
-                $student = User::findOrFail($payment->student_id);
-                $parent = User::find($payment->parent_id);
-
-                if (!$parent) {
-                    throw new \Exception("The parent account associated with this payment no longer exists.");
-                }
-
-                // 2. Activate Student and enforce the Parent Link
-                $student->update([
-                    'is_active' => 1,
-                    'parent_id' => $parent->id // 🚀 Ensures Parent Portal query finds them
-                ]);
-
-                // 3. Link via Pivot Table (The "Parent Portal" connector)
-                if (method_exists($parent, 'children')) {
-                    $parent->children()->syncWithoutDetaching([$student->id => ['relationship' => 'Parent']]);
-                }
-
-                // 4. Update Payment
-                $payment->update([
-                    'status' => 'approved', 
-                    'approved_at' => now()
-                ]);
-
-                // 5. Create Enrollment
-                CourseEnrollment::updateOrCreate(
-                    ['course_id' => $payment->course_id, 'student_id' => $student->id],
-                    ['status' => 'active', 'enrolled_at' => now(), 'expires_at' => now()->addDays(365)]
-                );
-
-                // 6. Setup/Update Profile
-                $course = Course::find($payment->course_id);
-                StudentProfile::updateOrCreate(
-                    ['user_id' => $student->id],
-                    ['learning_language' => $course ? $course->title : 'General Yoruba', 'rank' => 'Akeko']
-                );
-
-                // 7. Notify Parent
-                try {
-                    $parent->notify(new \App\Notifications\StudentAccountActivated([
-                        'name' => $student->name, 
-                        'email' => $student->email
-                    ], $course->title ?? 'General Yoruba'));
-                } catch (\Exception $e) {
-                    Log::error("Activation notification failed: " . $e->getMessage());
-                }
-
-                return response()->json(['message' => "Success! Student activated and linked to parent account."]);
-            });
-        } catch (\Exception $e) {
-            Log::error("Approval Error: " . $e->getMessage());
-            return response()->json(['message' => 'Action Halted: ' . $e->getMessage()], 500);
-        }
+    /**
+ * ✅ Admin: Approve Payment & Sync Parent-Child Relationship
+ */
+public function approvePayment(Request $request, $id)
+{
+    $user = $request->user();
+    // Staff check
+    if (!$user || ($user->role !== 'admin' && (int)$user->is_admin !== 1 && $user->role !== 'tutor')) {
+        return response()->json(['message' => 'Unauthorized.'], 403);
     }
+
+    $payment = EnrollmentPayment::findOrFail($id);
+
+    try {
+        return DB::transaction(function () use ($payment) {
+            // 1. Find Student and Parent
+            $student = User::findOrFail($payment->student_id);
+            $parent = User::find($payment->parent_id);
+
+            if (!$parent) {
+                throw new \Exception("The parent account associated with this payment no longer exists.");
+            }
+
+            // 2. Activate Student and enforce the Parent Link
+            $student->update([
+                'is_active' => 1,
+                'parent_id' => $parent->id
+            ]);
+
+            // 3. Link via Pivot Table
+            if (method_exists($parent, 'children')) {
+                $parent->children()->syncWithoutDetaching([$student->id => ['relationship' => 'Parent']]);
+            }
+
+            // 4. Update Payment
+            $payment->update([
+                'status' => 'approved', 
+                'approved_at' => now()
+            ]);
+
+            // 5. Create Enrollment
+            $enrollment = CourseEnrollment::updateOrCreate(
+                ['course_id' => $payment->course_id, 'student_id' => $student->id],
+                ['status' => 'active', 'enrolled_at' => now(), 'expires_at' => now()->addDays(365)]
+            );
+
+            // 6. Setup/Update Profile
+            $course = Course::find($payment->course_id);
+            StudentProfile::updateOrCreate(
+                ['user_id' => $student->id],
+                ['learning_language' => $course ? $course->title : 'General Yoruba', 'rank' => 'Akeko']
+            );
+
+            // 🚀 7. AUTO-ENROLL IN MATHS/ENGLISH (NEW!)
+            $bonusSubject = null;
+            if ($course) {
+                $autoEnrollService = app(AutoEnrollmentService::class);
+                $bonusSubject = $autoEnrollService->enrollUserInExternalSubject($student, $course);
+            }
+
+            // 8. Notify Parent
+            try {
+                $parent->notify(new \App\Notifications\StudentAccountActivated([
+                    'name' => $student->name, 
+                    'email' => $student->email
+                ], $course->title ?? 'General Yoruba'));
+            } catch (\Exception $e) {
+                Log::error("Activation notification failed: " . $e->getMessage());
+            }
+
+            // 🚀 Build response with bonus subject info
+            $response = [
+                'message' => "Success! Student activated and linked to parent account.",
+                'enrollment' => $enrollment
+            ];
+
+            if ($bonusSubject) {
+                $response['bonus_subject'] = [
+                    'name' => $bonusSubject->name,
+                    'year_group' => $bonusSubject->year_group,
+                    'key_stage' => $bonusSubject->key_stage,
+                    'message' => "🎉 Bonus! {$student->name} has been enrolled in {$bonusSubject->name} Year {$bonusSubject->year_group}"
+                ];
+            }
+
+            return response()->json($response);
+        });
+    } catch (\Exception $e) {
+        Log::error("Approval Error: " . $e->getMessage());
+        return response()->json(['message' => 'Action Halted: ' . $e->getMessage()], 500);
+    }
+}
 
     /**
      * ❌ Admin: Reject Payment
