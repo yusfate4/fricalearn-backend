@@ -20,6 +20,8 @@ use App\Http\Controllers\Api\AiController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\RewardController;
 use App\Http\Controllers\Api\AdminScheduleController;
+use App\Http\Controllers\Api\ExternalSubjectController;
+use App\Http\Controllers\Api\ExternalLessonController;
 
 // 🚀 THE YUSUF MIGRATION TOOL
 Route::get('/force-migrate-7788', function () {
@@ -161,4 +163,28 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/rewards', [GamificationController::class, 'getRewardsCatalog']);
         Route::post('/rewards/{id}/redeem', [GamificationController::class, 'redeemReward']);
     });
+
+
+ 
+// External subjects (Maths/English)
+Route::prefix('external')->middleware('auth:sanctum')->group(function () {
+    
+    // Get user's enrolled subjects
+    Route::get('/subjects', [ExternalSubjectController::class, 'index']);
+    
+    // Get subject details with topics
+    Route::get('/subjects/{id}', [ExternalSubjectController::class, 'show']);
+    
+    // Get lessons for a topic
+    Route::get('/topics/{id}/lessons', [ExternalLessonController::class, 'indexByTopic']);
+    
+    // Get single lesson
+    Route::get('/lessons/{id}', [ExternalLessonController::class, 'show']);
+    
+    // Update lesson progress
+    Route::post('/lessons/{id}/progress', [ExternalLessonController::class, 'updateProgress']);
+    
+    // Submit quiz
+    Route::post('/lessons/{id}/quiz', [ExternalLessonController::class, 'submitQuiz']);
+});
 });
