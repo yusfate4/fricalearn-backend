@@ -17,47 +17,46 @@ class AutoEnrollmentService
      * @return ExternalSubject|null The assigned subject, or null if not applicable
      */
     public function enrollUserInExternalSubject(User $user, Course $course)
-    {
-        // Only trigger for African language courses
-        $africanLanguages = ['Yoruba', 'Hausa', 'Igbo'];
-        
-        if (!in_array($course->title, $africanLanguages)) {
-            Log::info("Auto-enrollment skipped: {$course->title} is not an African language course");
-            return null;
-        }
-
-        // Check if user already has external subject
-        if ($user->externalSubjects()->exists()) {
-            Log::info("Auto-enrollment skipped: User {$user->id} already enrolled in external subject");
-            return null;
-        }
-
-        // Determine year group based on student age
-        $yearGroup = $this->determineYearGroup($user);
-
-        // Get available subjects for this year group
-        $subjects = ExternalSubject::whereIn('name', ['Maths', 'English'])
-                                    ->where('year_group', $yearGroup)
-                                    ->get();
-
-        if ($subjects->isEmpty()) {
-            Log::warning("No external subjects found for year group {$yearGroup}");
-            return null;
-        }
-
-        // Randomly select Maths or English
-        $subject = $subjects->random();
-
-        // Enroll user
-        $user->externalSubjects()->attach($subject->id, [
-            'enrolled_at' => now(),
-            'progress_percentage' => 0
-        ]);
-
-        Log::info("Auto-enrolled user {$user->id} ({$user->name}) in {$subject->name} Year {$yearGroup}");
-
-        return $subject;
+{
+    // Check if course contains African language keywords
+    $isAfricanLanguage = str_contains($course->title, 'Yoruba') || 
+                         str_contains($course->title, 'Hausa') || 
+                         str_contains($course->title, 'Igbo');
+    
+    if (!$isAfricanLanguage) {
+        Log::info("Auto-enrollment skipped: {$course->title} is not an African language course");
+        return null;
     }
+
+    // Check if user already has external subject
+    if ($user->externalSubjects()->exists()) {
+        Log::info("Auto-enrollment skipped: User {$user->id} already enrolled in external subject");
+        return null;
+    }
+
+    // Rest of the code stays the same...
+    $yearGroup = $this->determineYearGroup($user);
+
+    $subjects = ExternalSubject::whereIn('name', ['Maths', 'English'])
+                                ->where('year_group', $yearGroup)
+                                ->get();
+
+    if ($subjects->isEmpty()) {
+        Log::warning("No external subjects found for year group {$yearGroup}");
+        return null;
+    }
+
+    $subject = $subjects->random();
+
+    $user->externalSubjects()->attach($subject->id, [
+        'enrolled_at' => now(),
+        'progress_percentage' => 0
+    ]);
+
+    Log::info("Auto-enrolled user {$user->id} ({$user->name}) in {$subject->name} Year {$yearGroup}");
+
+    return $subject;
+}
 
     /**
      * Determine appropriate year group based on user age/profile
