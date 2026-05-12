@@ -7,20 +7,22 @@ use Illuminate\Database\Eloquent\Model;
 class ExternalLesson extends Model
 {
     protected $fillable = [
-        'topic_id',
+        'topic_id',           // ADD THIS LINE
         'title',
         'description',
         'video_url',
         'slide_url',
         'worksheet_url',
-        'quiz_data',
         'duration_minutes',
         'order_index',
+        'quiz_data',
         'external_id'
     ];
 
     protected $casts = [
-        'quiz_data' => 'array'
+        'quiz_data' => 'array',
+        'duration_minutes' => 'integer',
+        'order_index' => 'integer'
     ];
 
     public function topic()
