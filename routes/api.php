@@ -66,8 +66,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/message', [ChatController::class, 'sendMessage']);
         Route::get('/conversations', [ChatController::class, 'getConversations']);
         Route::get('/messages/{receiverId}', [ChatController::class, 'getMessages']);
+ });
 
-        // Add this route (inside the auth:sanctum middleware group)
+ 
 Route::get('/students/{id}/info', function($id) {
     $student = \App\Models\User::where('role', 'student')->findOrFail($id);
     return response()->json([
@@ -75,8 +76,8 @@ Route::get('/students/{id}/info', function($id) {
         'name' => $student->name,
         'id' => $student->id
     ]);
-})->middleware('auth:sanctum');
-    });
+});
+   
 
     /*
     |--------------------------------------------------------------------------
