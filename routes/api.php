@@ -196,5 +196,18 @@ Route::prefix('external')->middleware('auth:sanctum')->group(function () {
     
     // Submit quiz
     Route::post('/lessons/{id}/quiz', [ExternalLessonController::class, 'submitQuiz']);
+
+    Route::get('/users/{id}', function($id) {
+    $user = \App\Models\User::findOrFail($id);
+    return response()->json([
+        'success' => true,
+        'user' => [
+            'id' => $user->id,
+            'name' => $user->name,
+            'email' => $user->email
+        ]
+    ]);
+})->middleware('auth:sanctum');
+
 });
 });
