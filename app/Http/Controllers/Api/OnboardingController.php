@@ -179,6 +179,7 @@ class OnboardingController extends Controller
      */
     public function submitOnboarding(Request $request)
     {
+        
         $validated = $request->validate([
             'parent_id' => 'required|exists:users,id',
             'child_name' => 'required|string|max:255',
@@ -267,12 +268,20 @@ class OnboardingController extends Controller
             ]);
 
         } catch (\Exception $e) {
-            DB::rollBack();
-            
-            return response()->json([
-                'success' => false,
-                'message' => 'Enrollment failed: ' . $e->getMessage(),
-            ], 500);
+        // Add detailed logging
+        \Log::error('Onboarding Error: ' . $e->getMessage());
+        \Log::error('Line: ' . $e->getLine());
+        \Log::error('File: ' . $e->getFile());
+        \Log::error('Trace: ' . $e->getTraceAsString());
+        
+        DB::rollBack();
+        
+        return response()->json([
+            'success' => false,
+            'message' => 'Enrollment failed: ' . $e->getMessage(),
+            'line' => $e->getLine(),
+            'file' => basename($e->getFile()),
+        ], 500);
         }
     }
 
