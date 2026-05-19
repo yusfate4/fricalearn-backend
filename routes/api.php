@@ -22,6 +22,7 @@ use App\Http\Controllers\Api\RewardController;
 use App\Http\Controllers\Api\AdminScheduleController;
 use App\Http\Controllers\Api\ExternalSubjectController;
 use App\Http\Controllers\Api\ExternalLessonController;
+use App\Http\Controllers\Api\OnboardingController;
 
 // 🚀 THE YUSUF MIGRATION TOOL
 Route::get('/force-migrate-7788', function () {
@@ -68,7 +69,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/messages/{receiverId}', [ChatController::class, 'getMessages']);
  });
 
- 
+
 Route::get('/students/{id}/info', function($id) {
     $student = \App\Models\User::where('role', 'student')->findOrFail($id);
     return response()->json([
@@ -151,6 +152,28 @@ Route::get('/students/{id}/info', function($id) {
         Route::get('/courses', [CourseController::class, 'index']); 
         Route::get('/active-student/{id}', [ParentController::class, 'getActiveStudent']);
     });
+
+
+    /*
+|--------------------------------------------------------------------------
+| 🚀 NEW ONBOARDING ROUTES (4-Step Registration)
+|--------------------------------------------------------------------------
+| Flow: Course Selection → Grade Selection → Pricing → Payment Upload
+| Features: Auto-approval, Maths/English (paid), Languages (free)
+*/
+Route::prefix('onboarding')->group(function () {
+    // Step 1: Get available courses (Maths, English, Yoruba, Hausa, Igbo)
+    Route::get('/courses', [OnboardingController::class, 'getCourses']);
+    
+    // Step 2: Calculate pricing based on selected courses
+    Route::post('/calculate-pricing', [OnboardingController::class, 'calculatePricing']);
+    
+    // Step 3: Get bank account details for payment
+    Route::get('/bank-details', [OnboardingController::class, 'getBankDetails']);
+    
+    // Step 4: Submit complete onboarding (creates child, uploads receipt, auto-approves, enrolls)
+    Route::post('/submit', [OnboardingController::class, 'submitOnboarding']);
+});
 
     /*
     |----------------------------------------------------------------------
