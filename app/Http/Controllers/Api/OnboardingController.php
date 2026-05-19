@@ -261,11 +261,66 @@ class OnboardingController extends Controller
             ]);
 
             // 5. Auto-enroll student in selected courses
-            $this->autoEnrollmentService->enrollStudent(
-                $child->id,
-                $validated['selected_courses'],
-                $validated['maths_grade'] ?? null,
-                $validated['english_grade'] ?? null
+            foreach ($validated['selected_courses'] as $courseId) {
+                if ($courseId === 'maths' || $courseId === 'english') {
+                    // UK Curriculum subjects - create ExternalSubject enrollment
+                    $subjectName = $courseId === 'maths' ? 'Mathematics' : 'English';
+                    $grade = $courseId === 'maths' ? $validated['maths_grade'] : $validated['english_grade'];
+                    
+                    if ($grade) {
+                        // Find or create the external subject
+                        $externalSubject = DB::table('external_subjects')
+                            ->where('title', 'like', "%{$subjectName} Year {$grade}%")
+                            ->first();
+                        
+                        if (!$externalSubject) {
+                            // Create it if it doesn't exist
+                            $subjectId = DB::table('external_subjects')->insertGetId([
+                                'title' => "{$subjectName} Year {$grade}",
+                                'description' => "UK Curriculum {$subjectName} for Year {$grade}",
+                                'created_at' => now(),
+                                'updated_at' => now(),
+                            ]);
+                        } else {
+                            $subjectId = $externalSubject->id;
+                        }
+                        
+                        // Enroll the student
+                        DB::table('user_external_subject_enrollments')->insert([
+                            'user_id' => $child->id,
+                            'external_subject_id' => $subjectId,
+                            'progress_percentage' => 0,
+                            'created_at' => now(),
+                            'updated_at' => now(),
+                        ]);
+                    }
+                } else {
+                    // Language courses - find course and create enrollment
+                    $courseName = ucfirst($courseId);
+                    $course = DB::table('courses')
+                        ->where('title', 'like', "%{$courseName}%")
+                        ->first();
+                    
+                    if ($course) {
+                        DB::table('course_enrollments')->insert([
+                            'user_id' => $child->id,
+                            'course_id' => $course->id,
+                            'status' => 'active',
+                            'created_at' => now(),
+                            'updated_at' => now(),
+                        ]);
+                    }
+                }
+            }
+            
+            // Initialize student profile for week unlocking
+            DB::table('student_profiles')->updateOrInsert(
+                ['user_id' => $child->id],
+                [
+                    'current_week' => 1,
+                    'week_unlocked_at' => json_encode(['1' => now()->toDateTimeString()]),
+                    'updated_at' => now(),
+                ]
             );
 
             DB::commit();
