@@ -22,11 +22,11 @@ class OnboardingController extends Controller
     }
 
     /**
-     * Get available courses with pricing
+     * Get courses data array (private helper)
      */
-    public function getCourses()
+    private function getCoursesData()
     {
-        $courses = [
+        return [
             [
                 'id' => 'maths',
                 'name' => 'Mathematics (UK Curriculum)',
@@ -84,10 +84,16 @@ class OnboardingController extends Controller
                 'icon' => '🇳🇬',
             ],
         ];
+    }
 
+    /**
+     * Get available courses with pricing (API endpoint)
+     */
+    public function getCourses()
+    {
         return response()->json([
             'success' => true,
-            'courses' => $courses,
+            'courses' => $this->getCoursesData(),
         ]);
     }
 
@@ -102,7 +108,7 @@ class OnboardingController extends Controller
             'currency' => 'required|in:NGN,GBP',
         ]);
 
-        $courses = $this->getCourses()->getData()->courses;
+        $courses = $this->getCoursesData();
         $breakdown = [];
         $subtotal = 0;
 
@@ -111,14 +117,14 @@ class OnboardingController extends Controller
             
             if ($course) {
                 $amount = $validated['currency'] === 'NGN' 
-                    ? $course->price_ngn 
-                    : $course->price_gbp;
+                    ? $course['price_ngn'] 
+                    : $course['price_gbp'];
 
                 $breakdown[] = [
                     'course' => $courseId,
-                    'name' => explode(' ', $course->name)[0],
+                    'name' => explode(' ', $course['name'])[0],
                     'amount' => $amount,
-                    'is_free' => $course->type === 'free',
+                    'is_free' => $course['type'] === 'free',
                     'currency' => $validated['currency'],
                 ];
 
