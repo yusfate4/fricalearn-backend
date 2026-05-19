@@ -245,7 +245,7 @@ class OnboardingController extends Controller
 
             // 4. Create payment record with auto-approval
             $payment = EnrollmentPayment::create([
-                'parent_id' => $validated['parent_id'],  // FIXED: Use parent_id not user_id
+                'parent_id' => $validated['parent_id'],
                 'course_id' => null, // Multi-course enrollment
                 'amount' => $validated['total_amount'],
                 'currency' => $validated['currency'],
