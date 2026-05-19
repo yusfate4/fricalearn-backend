@@ -174,7 +174,6 @@ Route::prefix('onboarding')->group(function () {
     // Step 4: Submit complete onboarding (creates child, uploads receipt, auto-approves, enrolls)
     Route::post('/submit', [OnboardingController::class, 'submitOnboarding']);
 });
-
     /*
     |----------------------------------------------------------------------
     | 🎓 STUDENT ROUTES (No longer gated by 'verified' middleware)
