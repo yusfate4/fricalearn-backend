@@ -9,18 +9,22 @@ class EnrollmentPayment extends Model
 {
     use HasFactory;
 
-    protected $fillable = [
-        'parent_id',
-        'student_id',   // 🚀 ADDED: Essential for linking the child
-        'course_id',
-        'child_name',
-        'amount',
-        'currency',
-        'receipt_path',
-        'status',
-        'approved_at'   // 🚀 ADDED: Essential for the Audit Log/History
-    ];
-
+ protected $fillable = [
+    'parent_id',  // ← Make sure this is here!
+    'course_id',
+    'amount',
+    'currency',
+    'receipt_path',
+    'child_name',
+    'status',
+    'auto_approved',
+    'includes_maths',
+    'includes_english',
+    'includes_yoruba',
+    'includes_hausa',
+    'includes_igbo',
+    // ... other fields
+];
     // --- 🤝 Relationships ---
 
     public function parent() 
