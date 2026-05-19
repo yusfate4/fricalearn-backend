@@ -179,7 +179,6 @@ class OnboardingController extends Controller
      */
     public function submitOnboarding(Request $request)
     {
-        
         $validated = $request->validate([
             'parent_id' => 'required|exists:users,id',
             'child_name' => 'required|string|max:255',
@@ -222,15 +221,26 @@ class OnboardingController extends Controller
                 'updated_at' => now(),
             ]);
 
-            // 3. Upload receipt to Cloudinary
+            // 3. Upload receipt to storage
             $receiptPath = null;
             if ($request->hasFile('receipt')) {
                 $file = $request->file('receipt');
-                $uploadResult = cloudinary()->upload($file->getRealPath(), [
-                    'folder' => 'receipts',
-                    'resource_type' => 'auto',
-                ]);
-                $receiptPath = $uploadResult->getPublicId();
+                
+                // Store in public/receipts directory
+                $fileName = time() . '_' . $file->getClientOriginalName();
+                $receiptPath = $file->storeAs('receipts', $fileName, 'public');
+                
+                // Alternatively, if Cloudinary is configured, use it:
+                // try {
+                //     $uploadResult = cloudinary()->upload($file->getRealPath(), [
+                //         'folder' => 'receipts',
+                //         'resource_type' => 'auto',
+                //     ]);
+                //     $receiptPath = $uploadResult->getPublicId();
+                // } catch (\Exception $e) {
+                //     // Fallback to local storage
+                //     $receiptPath = $file->storeAs('receipts', $fileName, 'public');
+                // }
             }
 
             // 4. Create payment record with auto-approval
@@ -268,20 +278,12 @@ class OnboardingController extends Controller
             ]);
 
         } catch (\Exception $e) {
-        // Add detailed logging
-        \Log::error('Onboarding Error: ' . $e->getMessage());
-        \Log::error('Line: ' . $e->getLine());
-        \Log::error('File: ' . $e->getFile());
-        \Log::error('Trace: ' . $e->getTraceAsString());
-        
-        DB::rollBack();
-        
-        return response()->json([
-            'success' => false,
-            'message' => 'Enrollment failed: ' . $e->getMessage(),
-            'line' => $e->getLine(),
-            'file' => basename($e->getFile()),
-        ], 500);
+            DB::rollBack();
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Enrollment failed: ' . $e->getMessage(),
+            ], 500);
         }
     }
 
