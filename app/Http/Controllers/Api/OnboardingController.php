@@ -3,20 +3,26 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
+use App\Models\Course;
 use App\Models\User;
 use App\Models\EnrollmentPayment;
-use App\Models\StudentProfile;
 use App\Services\AutoEnrollmentService;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 
 class OnboardingController extends Controller
 {
+    protected $autoEnrollmentService;
+
+    public function __construct(AutoEnrollmentService $autoEnrollmentService)
+    {
+        $this->autoEnrollmentService = $autoEnrollmentService;
+    }
+
     /**
-     * STEP 1: Get available courses for onboarding
-     * Returns: Maths, English, Yoruba, Hausa, Igbo with pricing and grade ranges
+     * Get available courses with pricing
      */
     public function getCourses()
     {
@@ -28,8 +34,8 @@ class OnboardingController extends Controller
                 'price_ngn' => 20000,
                 'price_gbp' => 13.33,
                 'type' => 'paid',
-                'grades' => range(1, 10),
-                'icon' => '🔢'
+                'grades' => [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+                'icon' => '🔢',
             ],
             [
                 'id' => 'english',
@@ -38,8 +44,8 @@ class OnboardingController extends Controller
                 'price_ngn' => 20000,
                 'price_gbp' => 13.33,
                 'type' => 'paid',
-                'grades' => range(1, 10),
-                'icon' => '📚'
+                'grades' => [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+                'icon' => '📚',
             ],
             [
                 'id' => 'yoruba',
@@ -51,7 +57,7 @@ class OnboardingController extends Controller
                 'original_price_ngn' => 20000,
                 'original_price_gbp' => 13.33,
                 'scholarship' => true,
-                'icon' => '🇳🇬'
+                'icon' => '🇳🇬',
             ],
             [
                 'id' => 'hausa',
@@ -63,7 +69,7 @@ class OnboardingController extends Controller
                 'original_price_ngn' => 20000,
                 'original_price_gbp' => 13.33,
                 'scholarship' => true,
-                'icon' => '🇳🇬'
+                'icon' => '🇳🇬',
             ],
             [
                 'id' => 'igbo',
@@ -75,49 +81,48 @@ class OnboardingController extends Controller
                 'original_price_ngn' => 20000,
                 'original_price_gbp' => 13.33,
                 'scholarship' => true,
-                'icon' => '🇳🇬'
-            ]
+                'icon' => '🇳🇬',
+            ],
         ];
 
         return response()->json([
             'success' => true,
-            'courses' => $courses
+            'courses' => $courses,
         ]);
     }
 
     /**
-     * STEP 2: Calculate pricing based on selected courses
+     * Calculate pricing based on selected courses
      */
     public function calculatePricing(Request $request)
     {
         $validated = $request->validate([
-            'selected_courses' => 'required|array|min:1',
-            'currency' => 'required|in:NGN,GBP'
+            'selected_courses' => 'required|array',
+            'selected_courses.*' => 'required|string',
+            'currency' => 'required|in:NGN,GBP',
         ]);
 
-        $prices = [
-            'maths' => ['NGN' => 20000, 'GBP' => 13.33],
-            'english' => ['NGN' => 20000, 'GBP' => 13.33],
-            'yoruba' => ['NGN' => 0, 'GBP' => 0],
-            'hausa' => ['NGN' => 0, 'GBP' => 0],
-            'igbo' => ['NGN' => 0, 'GBP' => 0],
-        ];
-
-        $total = 0;
+        $courses = $this->getCourses()->getData()->courses;
         $breakdown = [];
+        $subtotal = 0;
 
-        foreach ($validated['selected_courses'] as $course) {
-            if (isset($prices[$course])) {
-                $amount = $prices[$course][$validated['currency']];
-                $total += $amount;
-                
+        foreach ($validated['selected_courses'] as $courseId) {
+            $course = collect($courses)->firstWhere('id', $courseId);
+            
+            if ($course) {
+                $amount = $validated['currency'] === 'NGN' 
+                    ? $course->price_ngn 
+                    : $course->price_gbp;
+
                 $breakdown[] = [
-                    'course' => $course,
-                    'name' => ucfirst($course),
+                    'course' => $courseId,
+                    'name' => explode(' ', $course->name)[0],
                     'amount' => $amount,
-                    'is_free' => $amount == 0,
-                    'currency' => $validated['currency']
+                    'is_free' => $course->type === 'free',
+                    'currency' => $validated['currency'],
                 ];
+
+                $subtotal += $amount;
             }
         }
 
@@ -125,14 +130,14 @@ class OnboardingController extends Controller
             'success' => true,
             'currency' => $validated['currency'],
             'breakdown' => $breakdown,
-            'subtotal' => $total,
+            'subtotal' => $subtotal,
             'discount' => 0,
-            'total' => $total
+            'total' => $subtotal,
         ]);
     }
 
     /**
-     * STEP 3: Get bank account details for payment
+     * Get bank account details
      */
     public function getBankDetails()
     {
@@ -144,87 +149,65 @@ class OnboardingController extends Controller
                     'bank_name' => 'PROVIDUS BANK',
                     'account_number' => '1309393680',
                     'account_name' => 'FRICA SOLUTION LIMITED',
-                    'flag' => '🇳🇬'
+                    'flag' => '🇳🇬',
                 ],
                 'gbp' => [
                     'currency' => 'GBP',
                     'bank_name' => 'Monzo/Revolut',
                     'account_number' => '012345678',
                     'account_name' => 'FRICA SOLUTION LIMITED',
-                    'flag' => '🇬🇧'
-                ]
+                    'flag' => '🇬🇧',
+                ],
             ],
             'payment_instructions' => [
                 'Use the child\'s name as payment reference',
                 'Upload clear photo or PDF of payment receipt',
                 'Access is granted immediately upon submission',
-                'Admin will verify payment within 24 hours'
-            ]
+                'Admin will verify payment within 24 hours',
+            ],
         ]);
     }
 
     /**
-     * STEP 4: Submit complete onboarding with payment
-     * Creates child user, uploads receipt, auto-approves, and enrolls in courses
+     * Submit complete onboarding with auto-approval
      */
     public function submitOnboarding(Request $request)
     {
         $validated = $request->validate([
             'parent_id' => 'required|exists:users,id',
             'child_name' => 'required|string|max:255',
-            'child_email' => 'required|email|unique:users,email',
-            'child_password' => 'required|string|min:6',
-            'selected_courses' => 'required|array|min:1',
-            'selected_courses.*' => 'in:maths,english,yoruba,hausa,igbo',
-            'maths_grade' => 'nullable|integer|between:1,10',
-            'english_grade' => 'nullable|integer|between:1,10',
+            'birth_date' => 'required|date',
+            'gender' => 'required|in:male,female',
+            'selected_courses' => 'required|array',
+            'selected_courses.*' => 'required|string',
+            'maths_grade' => 'nullable|integer|min:1|max:10',
+            'english_grade' => 'nullable|integer|min:1|max:10',
             'currency' => 'required|in:NGN,GBP',
-            'total_amount' => 'required|numeric|min:0',
-            'receipt' => 'required|file|mimes:jpg,jpeg,png,pdf|max:5120', // 5MB max
+            'total_amount' => 'required|numeric',
+            'receipt' => 'required|file|mimes:jpg,jpeg,png,pdf|max:5120',
         ]);
 
-        // Validate that grades are provided if courses are selected
-        if (in_array('maths', $validated['selected_courses']) && !$validated['maths_grade']) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Maths grade is required when selecting Mathematics'
-            ], 422);
-        }
-
-        if (in_array('english', $validated['selected_courses']) && !$validated['english_grade']) {
-            return response()->json([
-                'success' => false,
-                'message' => 'English grade is required when selecting English'
-            ], 422);
-        }
-
         DB::beginTransaction();
-
+        
         try {
             // 1. Create child user account
+            $childEmail = $this->generateChildEmail($validated['child_name']);
+            $childPassword = Str::random(12); // Generate random password
+            
             $child = User::create([
                 'name' => $validated['child_name'],
-                'email' => $validated['child_email'],
-                'password' => Hash::make($validated['child_password']),
+                'email' => $childEmail,
+                'password' => Hash::make($childPassword),
                 'role' => 'student',
+                'birth_date' => $validated['birth_date'],
+                'gender' => $validated['gender'],
                 'selected_courses' => json_encode($validated['selected_courses']),
-                'maths_grade' => $validated['maths_grade'] ?? null,
-                'english_grade' => $validated['english_grade'] ?? null,
+                'maths_grade' => $validated['maths_grade'],
+                'english_grade' => $validated['english_grade'],
                 'onboarding_completed' => true,
-                'email_verified_at' => now(), // Auto-verify email
             ]);
 
-            // 2. Create student profile with week tracking
-            StudentProfile::create([
-                'user_id' => $child->id,
-                'learning_language' => $this->determineLearningLanguage($validated['selected_courses']),
-                'current_week' => 1,
-                'week_unlocked_at' => json_encode(['1' => now()->toISOString()]),
-                'lagging_topics' => json_encode([]),
-                'strong_topics' => json_encode([]),
-            ]);
-
-            // 3. Link parent to child
+            // 2. Link parent-child relationship
             DB::table('parent_child')->insert([
                 'parent_id' => $validated['parent_id'],
                 'child_id' => $child->id,
@@ -232,74 +215,78 @@ class OnboardingController extends Controller
                 'updated_at' => now(),
             ]);
 
-            // 4. Upload payment receipt
+            // 3. Upload receipt to Cloudinary
             $receiptPath = null;
             if ($request->hasFile('receipt')) {
-                $receiptPath = $request->file('receipt')->store('receipts', 'public');
+                $file = $request->file('receipt');
+                $uploadResult = cloudinary()->upload($file->getRealPath(), [
+                    'folder' => 'receipts',
+                    'resource_type' => 'auto',
+                ]);
+                $receiptPath = $uploadResult->getPublicId();
             }
 
-            // 5. Create payment record with AUTO-APPROVAL
+            // 4. Create payment record with auto-approval
             $payment = EnrollmentPayment::create([
-                'user_id' => $child->id,
-                'parent_id' => $validated['parent_id'],
+                'user_id' => $validated['parent_id'],
+                'course_id' => null, // Multi-course enrollment
                 'amount' => $validated['total_amount'],
                 'currency' => $validated['currency'],
                 'receipt_path' => $receiptPath,
-                'status' => 'temporary_approved', // 🚀 Auto-approved for immediate access
+                'child_name' => $validated['child_name'],
+                'status' => 'temporary_approved', // Auto-approved!
                 'auto_approved' => true,
-                'admin_verified' => false,
                 'includes_maths' => in_array('maths', $validated['selected_courses']),
                 'includes_english' => in_array('english', $validated['selected_courses']),
                 'includes_yoruba' => in_array('yoruba', $validated['selected_courses']),
                 'includes_hausa' => in_array('hausa', $validated['selected_courses']),
                 'includes_igbo' => in_array('igbo', $validated['selected_courses']),
-                'maths_grade' => $validated['maths_grade'] ?? null,
-                'english_grade' => $validated['english_grade'] ?? null,
             ]);
 
-            // 6. Trigger auto-enrollment in selected courses
-            app(AutoEnrollmentService::class)->enrollStudent($payment);
+            // 5. Auto-enroll student in selected courses
+            $this->autoEnrollmentService->enrollStudent(
+                $child->id,
+                $validated['selected_courses'],
+                $validated['maths_grade'] ?? null,
+                $validated['english_grade'] ?? null
+            );
 
             DB::commit();
 
             return response()->json([
                 'success' => true,
-                'message' => 'Onboarding successful! Your child now has access to all selected courses.',
-                'data' => [
-                    'child' => [
-                        'id' => $child->id,
-                        'name' => $child->name,
-                        'email' => $child->email,
-                    ],
-                    'payment' => [
-                        'id' => $payment->id,
-                        'status' => 'temporary_approved',
-                        'amount' => $payment->amount,
-                        'currency' => $payment->currency,
-                    ],
-                    'courses_enrolled' => $validated['selected_courses'],
-                ]
-            ], 201);
+                'message' => 'Child enrolled successfully with immediate access!',
+                'child_id' => $child->id,
+                'payment_id' => $payment->id,
+            ]);
 
         } catch (\Exception $e) {
             DB::rollBack();
             
             return response()->json([
                 'success' => false,
-                'message' => 'Onboarding failed. Please try again.',
-                'error' => $e->getMessage()
+                'message' => 'Enrollment failed: ' . $e->getMessage(),
             ], 500);
         }
     }
 
     /**
-     * Determine primary learning language based on selections
+     * Generate unique email for child based on their name
      */
-    private function determineLearningLanguage(array $courses)
+    private function generateChildEmail($childName)
     {
-        if (in_array('yoruba', $courses)) return 'Yoruba';
-        if (in_array('hausa', $courses)) return 'Hausa';
-        if (in_array('igbo', $courses)) return 'Igbo';
-        return 'English';
+        $slug = Str::slug($childName);
+        $baseEmail = $slug . '@fricalearnstudent.com';
+        
+        // Check if email exists, add number if needed
+        $counter = 1;
+        $email = $baseEmail;
+        
+        while (User::where('email', $email)->exists()) {
+            $email = $slug . $counter . '@fricalearnstudent.com';
+            $counter++;
+        }
+        
+        return $email;
     }
 }
