@@ -289,6 +289,7 @@ class OnboardingController extends Controller
                             $subjectId = DB::table('external_subjects')->insertGetId([
                                 'name' => "{$subjectName} Year {$grade}",
                                 'key_stage' => $keyStage,
+                                'year_group' => $grade,
                                 'created_at' => now(),
                                 'updated_at' => now(),
                             ]);
