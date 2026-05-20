@@ -268,6 +268,17 @@ class OnboardingController extends Controller
                     $grade = $courseId === 'maths' ? $validated['maths_grade'] : $validated['english_grade'];
                     
                     if ($grade) {
+                        // Calculate Key Stage based on year
+                        if ($grade <= 2) {
+                            $keyStage = 1;
+                        } elseif ($grade <= 6) {
+                            $keyStage = 2;
+                        } elseif ($grade <= 9) {
+                            $keyStage = 3;
+                        } else {
+                            $keyStage = 4;
+                        }
+                        
                         // Find or create the external subject (using 'name' column, not 'title')
                         $externalSubject = DB::table('external_subjects')
                             ->where('name', 'like', "%{$subjectName} Year {$grade}%")
@@ -277,6 +288,7 @@ class OnboardingController extends Controller
                             // Create it if it doesn't exist
                             $subjectId = DB::table('external_subjects')->insertGetId([
                                 'name' => "{$subjectName} Year {$grade}",
+                                'key_stage' => $keyStage,
                                 'created_at' => now(),
                                 'updated_at' => now(),
                             ]);
