@@ -268,15 +268,15 @@ class OnboardingController extends Controller
                     $grade = $courseId === 'maths' ? $validated['maths_grade'] : $validated['english_grade'];
                     
                     if ($grade) {
-                        // Find or create the external subject
+                        // Find or create the external subject (using 'name' column, not 'title')
                         $externalSubject = DB::table('external_subjects')
-                            ->where('title', 'like', "%{$subjectName} Year {$grade}%")
+                            ->where('name', 'like', "%{$subjectName} Year {$grade}%")
                             ->first();
                         
                         if (!$externalSubject) {
                             // Create it if it doesn't exist
                             $subjectId = DB::table('external_subjects')->insertGetId([
-                                'title' => "{$subjectName} Year {$grade}",
+                                'name' => "{$subjectName} Year {$grade}",
                                 'description' => "UK Curriculum {$subjectName} for Year {$grade}",
                                 'created_at' => now(),
                                 'updated_at' => now(),
