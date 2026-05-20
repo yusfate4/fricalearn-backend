@@ -288,10 +288,9 @@ class OnboardingController extends Controller
                             // Create it if it doesn't exist
                             $subjectId = DB::table('external_subjects')->insertGetId([
                                 'name' => "{$subjectName} Year {$grade}",
-                                'key_stage' => $keyStage,
+                                'key_stage' => (string)$keyStage,  // VARCHAR, not INT
                                 'year_group' => $grade,
-                                'created_at' => now(),
-                                'updated_at' => now(),
+                                'source' => 'FricaLearn',  // Add source field
                             ]);
                         } else {
                             $subjectId = $externalSubject->id;
@@ -302,8 +301,6 @@ class OnboardingController extends Controller
                             'user_id' => $child->id,
                             'external_subject_id' => $subjectId,
                             'progress_percentage' => 0,
-                            'created_at' => now(),
-                            'updated_at' => now(),
                         ]);
                     }
                 } else {
@@ -315,14 +312,20 @@ class OnboardingController extends Controller
                     
                     if ($course) {
                         DB::table('course_enrollments')->insert([
-                            'user_id' => $child->id,
+                            'student_id' => $child->id,
                             'course_id' => $course->id,
                             'status' => 'active',
-                            'created_at' => now(),
-                            'updated_at' => now(),
                         ]);
                     }
                 }
+            }
+            
+            // Determine primary learning language from selected courses
+            $learningLanguage = 'Yoruba'; // default
+            if (in_array('hausa', $validated['selected_courses'])) {
+                $learningLanguage = 'Hausa';
+            } elseif (in_array('igbo', $validated['selected_courses'])) {
+                $learningLanguage = 'Igbo';
             }
             
             // Initialize student profile for week unlocking
@@ -331,7 +334,7 @@ class OnboardingController extends Controller
                 [
                     'current_week' => 1,
                     'week_unlocked_at' => json_encode(['1' => now()->toDateTimeString()]),
-                    'updated_at' => now(),
+                    'learning_language' => $learningLanguage,
                 ]
             );
 
