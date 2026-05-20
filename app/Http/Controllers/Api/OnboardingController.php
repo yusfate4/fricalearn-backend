@@ -277,7 +277,6 @@ class OnboardingController extends Controller
                             // Create it if it doesn't exist
                             $subjectId = DB::table('external_subjects')->insertGetId([
                                 'name' => "{$subjectName} Year {$grade}",
-                                'description' => "UK Curriculum {$subjectName} for Year {$grade}",
                                 'created_at' => now(),
                                 'updated_at' => now(),
                             ]);
