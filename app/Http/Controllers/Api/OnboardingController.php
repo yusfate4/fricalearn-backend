@@ -315,6 +315,8 @@ class OnboardingController extends Controller
                             'student_id' => $child->id,
                             'course_id' => $course->id,
                             'status' => 'active',
+                            'enrolled_at' => now(),
+                            'expires_at' => now()->addYear(), // Add 1 year expiry
                         ]);
                     }
                 }
