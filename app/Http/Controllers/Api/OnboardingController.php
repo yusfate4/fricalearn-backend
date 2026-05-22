@@ -279,28 +279,64 @@ class OnboardingController extends Controller
                             $keyStage = 4;
                         }
                         
-                        // Find or create the external subject (using 'name' column, not 'title')
+                        // Find or create the external subject (EXACT match to avoid Year 1 matching Year 10!)
+                        $fullSubjectName = "{$subjectName} Year {$grade}";
                         $externalSubject = DB::table('external_subjects')
-                            ->where('name', 'like', "%{$subjectName} Year {$grade}%")
+                            ->where('name', '=', $fullSubjectName)  // EXACT match, not LIKE!
                             ->first();
                         
+                        // Log for debugging
+                        \Log::info('Onboarding: Looking for external subject', [
+                            'searching_for' => $fullSubjectName,
+                            'found' => $externalSubject ? 'YES' : 'NO',
+                            'child_id' => $child->id ?? 'unknown',
+                            'grade_selected' => $grade
+                        ]);
+                        
                         if (!$externalSubject) {
+                            // Subject doesn't exist - create it OR log error
+                            \Log::warning('Onboarding: External subject not found, attempting to create', [
+                                'subject_name' => $fullSubjectName,
+                                'grade' => $grade,
+                                'key_stage' => $keyStage
+                            ]);
+                            
                             // Create it if it doesn't exist
                             $subjectId = DB::table('external_subjects')->insertGetId([
-                                'name' => "{$subjectName} Year {$grade}",
-                                'key_stage' => (string)$keyStage,  // VARCHAR, not INT
+                                'name' => $fullSubjectName,
+                                'key_stage' => (string)$keyStage,
                                 'year_group' => $grade,
-                                'source' => 'FricaLearn',  // Add source field
+                                'source' => 'UK National Curriculum',
+                                'created_at' => now(),
+                                'updated_at' => now(),
+                            ]);
+                            
+                            \Log::info('Onboarding: Created new external subject', [
+                                'subject_id' => $subjectId,
+                                'name' => $fullSubjectName
                             ]);
                         } else {
                             $subjectId = $externalSubject->id;
+                            \Log::info('Onboarding: Using existing external subject', [
+                                'subject_id' => $subjectId,
+                                'name' => $externalSubject->name
+                            ]);
                         }
                         
-                        // Enroll the student
+                        // Enroll the student in the external subject
                         DB::table('user_external_subject_enrollments')->insert([
                             'user_id' => $child->id,
                             'external_subject_id' => $subjectId,
                             'progress_percentage' => 0,
+                            'enrolled_at' => now(),
+                            'created_at' => now(),
+                            'updated_at' => now(),
+                        ]);
+                        
+                        \Log::info('Onboarding: Student enrolled in external subject', [
+                            'student_id' => $child->id,
+                            'subject_id' => $subjectId,
+                            'subject_name' => $fullSubjectName
                         ]);
                     }
                 } else {
