@@ -51,6 +51,20 @@ class GamificationController extends Controller
         return response()->json($rewards);
     }
 
+
+    public function updateRank($studentId) {
+    $profile = StudentProfile::where('user_id', $studentId)->first();
+    $points = $profile->total_points;
+    
+    if ($points >= 5000) $rank = 'Master';
+    elseif ($points >= 3001) $rank = 'Expert';
+    elseif ($points >= 1501) $rank = 'Scholar';
+    elseif ($points >= 501) $rank = 'Explorer';
+    else $rank = 'Beginner';
+    
+    $profile->update(['current_level' => $rank]);
+}
+
     /**
      * 🎒 MY TREASURES: Get student's purchase history
      */
