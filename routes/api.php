@@ -182,6 +182,7 @@ Route::prefix('onboarding')->group(function () {
     Route::get('/live-classes', [LiveClassController::class, 'index']);
     Route::get('/live-classes/{id}', [LiveClassController::class, 'show']);
     Route::get('/courses', [CourseController::class, 'index']);
+    Route::get('/courses/enrolled', [CourseController::class, 'getEnrolledCourses']); // Get MY enrolled courses
     Route::get('/courses/{id}', [CourseController::class, 'show']);
     
     Route::prefix('lessons')->group(function () {

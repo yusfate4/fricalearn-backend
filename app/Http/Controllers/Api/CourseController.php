@@ -99,6 +99,39 @@ class CourseController extends Controller
     }
 
     /**
+     * 🎓 Get enrolled courses for the authenticated student
+     * Used by: Student Dashboard → "My Courses" page
+     */
+    public function getEnrolledCourses(Request $request)
+    {
+        try {
+            $user = $request->user();
+            
+            // Get enrolled course IDs for this student
+            $enrolledCourseIds = CourseEnrollment::where('student_id', $user->id)
+                ->where('status', 'active')
+                ->pluck('course_id')
+                ->toArray();
+            
+            // Fetch the actual course details with module counts
+            $courses = Course::whereIn('id', $enrolledCourseIds)
+                ->where('is_published', true)
+                ->withCount('modules')
+                ->get()
+                ->map(function($course) {
+                    $course->modules_count = $course->modules_count ?? 0;
+                    return $course;
+                });
+            
+            return response()->json([
+                'courses' => $courses
+            ]);
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
      * 📖 Show a specific course
      */
   public function show(Request $request, $id)
