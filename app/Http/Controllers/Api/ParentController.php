@@ -111,7 +111,8 @@ class ParentController extends Controller
             'pending_payments'   => $pendingPayments,
             'children'           => $childrenWithTracks, 
             'stats' => [
-                'active_courses' => $activeEnrollments->count(),
+                'active_students' => $activeEnrollments->pluck('student_id')->unique()->count(), // Count unique students
+                'active_courses' => $activeEnrollments->count(), // Total enrollments
                 'pending_count'  => $pendingPayments->count(),
             ]
         ]);
