@@ -34,6 +34,12 @@ class CourseController extends Controller
             // 🕵️ Get ID from Header or Query Param
             $activeStudentId = $request->header('X-Active-Student-Id') ?: $request->query('student_id');
 
+            \Log::info('CourseController index called', [
+                'user_id' => $user ? $user->id : null,
+                'user_role' => $user ? $user->role : null,
+                'active_student_id' => $activeStudentId
+            ]);
+
             // 👑 1. ADMIN: See everything
             if ($user && ($user->role === 'admin' || $user->is_admin == 1)) {
                 return response()->json(Course::withCount(['modules'])->latest()->get());
@@ -54,18 +60,24 @@ class CourseController extends Controller
             // 🛡️ 3. STUDENT / CLASSROOM VIEW: Only show PAID/ACTIVE courses
             $enrolledCourseIds = CourseEnrollment::where('student_id', $activeStudentId)
                 ->where('status', 'active')
-                ->where('expires_at', '>', now())
-                ->pluck('course_id');
+                ->pluck('course_id')
+                ->toArray();
 
-            return response()->json(
-                Course::whereIn('id', $enrolledCourseIds)
-                    ->where('is_published', true)
-                    ->withCount(['modules'])
-                    ->latest()
-                    ->get()
-            );
+            \Log::info('Enrolled course IDs', ['course_ids' => $enrolledCourseIds]);
+
+            $courses = Course::whereIn('id', $enrolledCourseIds)
+                ->where('is_published', true)
+                ->withCount(['modules'])
+                ->latest()
+                ->get();
+
+            return response()->json($courses);
             
         } catch (\Exception $e) {
+            \Log::error('CourseController index error', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
             return response()->json(['error' => $e->getMessage()], 500);
         }
     }
