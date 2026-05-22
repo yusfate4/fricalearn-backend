@@ -107,8 +107,14 @@ class CourseController extends Controller
         try {
             $user = $request->user();
             
+            // Check for parent impersonation
+            $activeStudentId = $request->header('X-Active-Student-Id');
+            
+            // Use impersonated student ID if parent is viewing, otherwise use own ID
+            $studentId = $activeStudentId ?: $user->id;
+            
             // Get enrolled course IDs for this student
-            $enrolledCourseIds = CourseEnrollment::where('student_id', $user->id)
+            $enrolledCourseIds = CourseEnrollment::where('student_id', $studentId)
                 ->where('status', 'active')
                 ->pluck('course_id')
                 ->toArray();
