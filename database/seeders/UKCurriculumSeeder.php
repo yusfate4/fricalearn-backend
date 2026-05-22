@@ -80,13 +80,13 @@ class UKCurriculumSeeder extends Seeder
         // Create or find the topic
         $topic = DB::table('external_topics')->updateOrInsert(
             [
-                'external_subject_id' => $subjectId,
+                'subject_id' => $subjectId,  // Fixed: was external_subject_id
                 'title' => $topicName,
             ],
             [
                 'description' => "UK Curriculum - {$topicName}",
                 'order_index' => DB::table('external_topics')
-                    ->where('external_subject_id', $subjectId)
+                    ->where('subject_id', $subjectId)  // Fixed: was external_subject_id
                     ->max('order_index') + 1,
                 'created_at' => now(),
                 'updated_at' => now(),
@@ -94,7 +94,7 @@ class UKCurriculumSeeder extends Seeder
         );
         
         $topicId = DB::table('external_topics')
-            ->where('external_subject_id', $subjectId)
+            ->where('subject_id', $subjectId)  // Fixed: was external_subject_id
             ->where('title', $topicName)
             ->value('id');
         
@@ -114,16 +114,14 @@ class UKCurriculumSeeder extends Seeder
         
         DB::table('external_lessons')->updateOrInsert(
             [
-                'external_topic_id' => $topicId,
+                'topic_id' => $topicId,  // Fixed: was external_topic_id
                 'title' => $lessonTitle,
             ],
             [
                 'description' => "Learn about {$lessonTitle}",
                 'video_url' => $videoUrl,
-                'content_type' => 'video',
                 'duration_minutes' => 15, // Default duration
                 'order_index' => $orderIndex,
-                'is_published' => true,
                 'created_at' => now(),
                 'updated_at' => now(),
             ]
