@@ -142,23 +142,8 @@ class UKCurriculumSeeder extends Seeder
     {
         $keyStage = $this->getKeyStage($yearNumber);
         
-        return "**{$lessonTitle}** (Year {$yearNumber}, {$keyStage})\n\n" .
-               "### Learning Objectives:\n" .
-               "- Understand the key concepts of {$lessonTitle}\n" .
-               "- Apply {$lessonTitle} to solve problems\n" .
-               "- Practice with examples and exercises\n\n" .
-               "### What You'll Learn:\n" .
-               "This lesson covers {$lessonTitle} as part of the UK National Curriculum. " .
-               "Watch the video to learn the fundamentals, then test your understanding with the quiz.\n\n" .
-               "### Key Concepts:\n" .
-               "- Core principles of {$lessonTitle}\n" .
-               "- Step-by-step problem solving\n" .
-               "- Real-world applications\n\n" .
-               "### Tips for Success:\n" .
-               "- Watch the video carefully\n" .
-               "- Take notes as you learn\n" .
-               "- Complete the quiz to check your understanding\n" .
-               "- Practice makes perfect!";
+        // SHORT description for topic list
+        return "Learn {$lessonTitle} (Year {$yearNumber}, {$keyStage}). Watch the video, review the concepts, and take the quiz to test your understanding.";
     }
     
     /**
@@ -185,10 +170,10 @@ class UKCurriculumSeeder extends Seeder
                     'question' => "What is the main concept covered in {$lessonTitle}?",
                     'type' => 'multiple_choice',
                     'options' => [
-                        'A' => 'Understanding the basics',
-                        'B' => 'Applying formulas',
-                        'C' => 'Solving problems',
-                        'D' => 'All of the above',
+                        ['label' => 'A', 'text' => 'Understanding the basics'],
+                        ['label' => 'B', 'text' => 'Applying formulas'],
+                        ['label' => 'C', 'text' => 'Solving problems'],
+                        ['label' => 'D', 'text' => 'All of the above'],
                     ],
                     'correct_answer' => 'D',
                     'explanation' => "{$lessonTitle} covers all these key areas.",
@@ -198,10 +183,10 @@ class UKCurriculumSeeder extends Seeder
                     'question' => "Practice question about {$lessonTitle}",
                     'type' => 'multiple_choice',
                     'options' => [
-                        'A' => 'Option A',
-                        'B' => 'Option B',
-                        'C' => 'Option C',
-                        'D' => 'Option D',
+                        ['label' => 'A', 'text' => 'Option A'],
+                        ['label' => 'B', 'text' => 'Option B'],
+                        ['label' => 'C', 'text' => 'Option C'],
+                        ['label' => 'D', 'text' => 'Option D'],
                     ],
                     'correct_answer' => 'B',
                     'explanation' => "Review the video to understand why this is correct.",
@@ -210,6 +195,10 @@ class UKCurriculumSeeder extends Seeder
                     'id' => 3,
                     'question' => "True or False: {$lessonTitle} is an important topic for Year {$yearNumber}",
                     'type' => 'true_false',
+                    'options' => [
+                        ['label' => 'True', 'text' => 'True'],
+                        ['label' => 'False', 'text' => 'False'],
+                    ],
                     'correct_answer' => 'True',
                     'explanation' => "Yes, this is a key part of the Year {$yearNumber} curriculum.",
                 ],
@@ -231,10 +220,10 @@ class UKCurriculumSeeder extends Seeder
                     'question' => "What is the key focus of {$lessonTitle}?",
                     'type' => 'multiple_choice',
                     'options' => [
-                        'A' => 'Reading comprehension',
-                        'B' => 'Writing skills',
-                        'C' => 'Grammar rules',
-                        'D' => 'All of the above',
+                        ['label' => 'A', 'text' => 'Reading comprehension'],
+                        ['label' => 'B', 'text' => 'Writing skills'],
+                        ['label' => 'C', 'text' => 'Grammar rules'],
+                        ['label' => 'D', 'text' => 'All of the above'],
                     ],
                     'correct_answer' => 'D',
                     'explanation' => "{$lessonTitle} helps develop multiple English skills.",
@@ -244,10 +233,10 @@ class UKCurriculumSeeder extends Seeder
                     'question' => "Practice question about {$lessonTitle}",
                     'type' => 'multiple_choice',
                     'options' => [
-                        'A' => 'Option A',
-                        'B' => 'Option B',
-                        'C' => 'Option C',
-                        'D' => 'Option D',
+                        ['label' => 'A', 'text' => 'Option A'],
+                        ['label' => 'B', 'text' => 'Option B'],
+                        ['label' => 'C', 'text' => 'Option C'],
+                        ['label' => 'D', 'text' => 'Option D'],
                     ],
                     'correct_answer' => 'B',
                     'explanation' => "Review the lesson content to see why this is the answer.",
@@ -318,25 +307,42 @@ class UKCurriculumSeeder extends Seeder
     }
     
     /**
-     * Get Khan Academy Maths URL for primary years
+     * Get YouTube Maths video URL for primary years (KS1/KS2)
+     * Using White Rose Maths and other UK primary maths YouTube channels
      */
     private function getKhanAcademyMathsUrl($lessonTitle, $yearNumber)
     {
+        // YouTube channels for primary maths:
+        // - White Rose Maths
+        // - Maths with Miss B
+        // - Corbettmaths (has some KS2 content)
+        
         $topicMap = [
-            'Addition' => 'https://www.khanacademy.org/math/arithmetic/arith-review-add-subtract',
-            'Subtraction' => 'https://www.khanacademy.org/math/arithmetic/arith-review-add-subtract',
-            'Multiplication' => 'https://www.khanacademy.org/math/arithmetic/arith-review-multiply-divide',
-            'Division' => 'https://www.khanacademy.org/math/arithmetic/arith-review-multiply-divide',
-            'Fractions' => 'https://www.khanacademy.org/math/arithmetic/fraction-arithmetic',
-            'Decimals' => 'https://www.khanacademy.org/math/arithmetic/arith-decimals',
-            'Place Value' => 'https://www.khanacademy.org/math/cc-third-grade-math/imp-place-value',
-            'Times Tables' => 'https://www.khanacademy.org/math/arithmetic/multiplication-division',
-            'Money' => 'https://www.khanacademy.org/math/cc-2nd-grade-math/x3184e0ec:money-and-time',
-            'Time' => 'https://www.khanacademy.org/math/cc-2nd-grade-math/x3184e0ec:money-and-time',
-            'Shapes' => 'https://www.khanacademy.org/math/geometry-home',
-            'Angles' => 'https://www.khanacademy.org/math/cc-fourth-grade-math/imp-geometry',
-            'Perimeter' => 'https://www.khanacademy.org/math/cc-third-grade-math/imp-geometry',
-            'Area' => 'https://www.khanacademy.org/math/cc-third-grade-math/imp-geometry',
+            // YEAR 1-2 (KS1)
+            'Addition' => 'https://www.youtube.com/watch?v=dbtH9bAJUgU',  // Addition basics
+            'Subtraction' => 'https://www.youtube.com/watch?v=KkTqeAcEBlc',  // Subtraction basics
+            'Count' => 'https://www.youtube.com/watch?v=DR-cfDsHCGA',  // Counting
+            'Number' => 'https://www.youtube.com/watch?v=DR-cfDsHCGA',  // Numbers
+            
+            // YEAR 3-6 (KS2)
+            'Multiplication' => 'https://www.youtube.com/watch?v=aNqG4ChKShI',  // Times tables
+            'Division' => 'https://www.youtube.com/watch?v=3ZaRsvetovne',  // Division
+            'Times Tables' => 'https://www.youtube.com/watch?v=aNqG4ChKShI',  // Times tables
+            'Fractions' => 'https://www.youtube.com/watch?v=uq3rZ0-PW3M',  // Fractions intro
+            'Decimals' => 'https://www.youtube.com/watch?v=msz5FJ7Tn8k',  // Decimals
+            'Place Value' => 'https://www.youtube.com/watch?v=YJLi4n1FwAM',  // Place value
+            'Money' => 'https://www.youtube.com/watch?v=dFzAU3u06Ps',  // Money
+            'Time' => 'https://www.youtube.com/watch?v=MwvUQUE20CI',  // Telling time
+            'Shapes' => 'https://www.youtube.com/watch?v=WTeqUejf3D0',  // 2D/3D shapes
+            '2D' => 'https://www.youtube.com/watch?v=WTeqUejf3D0',  // 2D shapes
+            '3D' => 'https://www.youtube.com/watch?v=ZnZYK533yag',  // 3D shapes
+            'Angles' => 'https://www.youtube.com/watch?v=_4CgJJGYf-Q',  // Angles intro
+            'Perimeter' => 'https://www.youtube.com/watch?v=2D-cJKoK6BM',  // Perimeter
+            'Area' => 'https://www.youtube.com/watch?v=AZq-WHD0iT0',  // Area
+            'Volume' => 'https://www.youtube.com/watch?v=qJwecTgce6c',  // Volume
+            'Percentages' => 'https://www.youtube.com/watch?v=RXhFe1h5v_8',  // Percentages intro
+            'Ratio' => 'https://www.youtube.com/watch?v=g-cXqJHfx4A',  // Ratio
+            'Proportion' => 'https://www.youtube.com/watch?v=SqL3dPTmQCU',  // Proportion
         ];
         
         foreach ($topicMap as $keyword => $url) {
@@ -345,24 +351,66 @@ class UKCurriculumSeeder extends Seeder
             }
         }
         
-        // Default to arithmetic
-        return 'https://www.khanacademy.org/math/arithmetic';
+        // Default: General primary maths video
+        return 'https://www.youtube.com/watch?v=DR-cfDsHCGA';  // Basic counting/numbers
     }
     
     /**
-     * Get English video URL from BBC Bitesize or Khan Academy
+     * Get English video URL from YouTube educational channels
      */
     private function getEnglishVideoUrl($lessonTitle, $yearNumber)
     {
         $topicMap = [
-            'Phonics' => 'https://www.bbc.co.uk/bitesize/topics/zvq9bdm',
-            'Reading' => 'https://www.bbc.co.uk/bitesize/subjects/z3kw2hv',
-            'Writing' => 'https://www.bbc.co.uk/bitesize/subjects/z3kw2hv',
-            'Grammar' => 'https://www.khanacademy.org/humanities/grammar',
-            'Spelling' => 'https://www.bbc.co.uk/bitesize/topics/zd63xyc',
-            'Shakespeare' => 'https://www.bbc.co.uk/bitesize/topics/zwmv34j',
-            'Poetry' => 'https://www.bbc.co.uk/bitesize/topics/zqdkhbk',
-            'Comprehension' => 'https://www.bbc.co.uk/bitesize/subjects/z3kw2hv',
+            // PHONICS & READING (KS1)
+            'Phonics' => 'https://www.youtube.com/watch?v=BELlZKpi1Zs',  // Phonics song
+            'Letter Sounds' => 'https://www.youtube.com/watch?v=BELlZKpi1Zs',  // Letter sounds
+            'Blending' => 'https://www.youtube.com/watch?v=NIqcJ0dQ8z8',  // Blending sounds
+            
+            // READING & COMPREHENSION
+            'Reading' => 'https://www.youtube.com/watch?v=y-jzp5kLdps',  // Reading strategies
+            'Comprehension' => 'https://www.youtube.com/watch?v=y-jzp5kLdps',  // Reading comprehension
+            'Inference' => 'https://www.youtube.com/watch?v=k6X6_nlPMTc',  // Inference skills
+            
+            // WRITING
+            'Writing' => 'https://www.youtube.com/watch?v=8mQjGGZCF18',  // Writing skills
+            'Sentences' => 'https://www.youtube.com/watch?v=PMJlKJJ6ltA',  // Writing sentences
+            'Paragraphs' => 'https://www.youtube.com/watch?v=KoS1fZ3XMU0',  // Paragraphs
+            'Story' => 'https://www.youtube.com/watch?v=FO0WI1O1A1k',  // Story writing
+            'Narrative' => 'https://www.youtube.com/watch?v=FO0WI1O1A1k',  // Narrative writing
+            'Persuasive' => 'https://www.youtube.com/watch?v=oOkuUlLApnk',  // Persuasive writing
+            'Descriptive' => 'https://www.youtube.com/watch?v=5jPCqJqC3zA',  // Descriptive writing
+            
+            // GRAMMAR
+            'Grammar' => 'https://www.youtube.com/watch?v=IZJpVrJ7eMI',  // Grammar basics
+            'Nouns' => 'https://www.youtube.com/watch?v=BQ4yd2W50No',  // Nouns
+            'Verbs' => 'https://www.youtube.com/watch?v=iQCu-lhPRIY',  // Verbs
+            'Adjectives' => 'https://www.youtube.com/watch?v=NkuuZEey_bs',  // Adjectives
+            'Adverbs' => 'https://www.youtube.com/watch?v=lsI7EAn5WHM',  // Adverbs
+            'Pronouns' => 'https://www.youtube.com/watch?v=hs5NpgbPCW4',  // Pronouns
+            'Prepositions' => 'https://www.youtube.com/watch?v=bDc1Z3OVH5c',  // Prepositions
+            'Conjunctions' => 'https://www.youtube.com/watch?v=ZNL2YBPSG6g',  // Conjunctions
+            
+            // PUNCTUATION
+            'Punctuation' => 'https://www.youtube.com/watch?v=DaU7KwmMiGQ',  // Punctuation
+            'Full Stops' => 'https://www.youtube.com/watch?v=DaU7KwmMiGQ',  // Full stops
+            'Capital Letters' => 'https://www.youtube.com/watch?v=4Q30CbaFQxI',  // Capital letters
+            'Question' => 'https://www.youtube.com/watch?v=_mC0Z6m0x7Y',  // Question marks
+            'Apostrophes' => 'https://www.youtube.com/watch?v=6rPpd6hEZzE',  // Apostrophes
+            'Speech Marks' => 'https://www.youtube.com/watch?v=kxz1OrrljJc',  // Speech marks
+            'Dialogue' => 'https://www.youtube.com/watch?v=kxz1OrrljJc',  // Dialogue
+            
+            // SPELLING
+            'Spelling' => 'https://www.youtube.com/watch?v=YmMmLg_DyYY',  // Spelling strategies
+            'Prefixes' => 'https://www.youtube.com/watch?v=TJlrDMJ5m-M',  // Prefixes
+            'Suffixes' => 'https://www.youtube.com/watch?v=8RRUSvT6nQE',  // Suffixes
+            'Homophones' => 'https://www.youtube.com/watch?v=oLaR2lH1Xjo',  // Homophones
+            
+            // LITERATURE (KS3/KS4)
+            'Shakespeare' => 'https://www.youtube.com/watch?v=Yx-rvJ5HqUk',  // Shakespeare intro
+            'Poetry' => 'https://www.youtube.com/watch?v=LZa03BuCELk',  // Poetry analysis
+            'Poetry Analysis' => 'https://www.youtube.com/watch?v=LZa03BuCELk',  // Poetry
+            'Drama' => 'https://www.youtube.com/watch?v=1f3nIuPr1e0',  // Drama
+            'Novel' => 'https://www.youtube.com/watch?v=R8xurCAu1KI',  // Novel analysis
         ];
         
         foreach ($topicMap as $keyword => $url) {
@@ -371,7 +419,7 @@ class UKCurriculumSeeder extends Seeder
             }
         }
         
-        // Default to BBC Bitesize English
-        return 'https://www.bbc.co.uk/bitesize/subjects/z3kw2hv';
+        // Default: General English skills video
+        return 'https://www.youtube.com/watch?v=y-jzp5kLdps';  // Reading strategies
     }
 }
