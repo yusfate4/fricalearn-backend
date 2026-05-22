@@ -23,6 +23,8 @@ use App\Http\Controllers\Api\AdminScheduleController;
 use App\Http\Controllers\Api\ExternalSubjectController;
 use App\Http\Controllers\Api\ExternalLessonController;
 use App\Http\Controllers\Api\OnboardingController;
+use App\Http\Controllers\Api\MonthlyReportController;
+
 
 // 🚀 THE YUSUF MIGRATION TOOL
 Route::get('/force-migrate-7788', function () {
@@ -151,6 +153,8 @@ Route::get('/students/{id}/info', function($id) {
         Route::get('/child-stats/{childId}', [ParentAnalyticsController::class, 'getChildStats']);
         Route::get('/courses', [CourseController::class, 'index']); 
         Route::get('/active-student/{id}', [ParentController::class, 'getActiveStudent']);
+        Route::get('/student-analytics/{childId}', [MonthlyReportController::class, 'getStudentAnalytics']);
+    Route::post('/send-monthly-report/{childId}', [MonthlyReportController::class, 'emailMonthlyReport']);
     });
 
 

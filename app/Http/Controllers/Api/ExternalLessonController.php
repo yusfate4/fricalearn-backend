@@ -72,67 +72,64 @@ class ExternalLessonController extends Controller
     /**
      * Submit quiz and calculate score
      */
-    public function submitQuiz(Request $request, $id)
-    {
-        $user = auth()->user();
-        $lesson = ExternalLesson::findOrFail($id);
-        
-        $userAnswers = $request->answers;
-        $quizData = $lesson->quiz_data;
-        
-        if (!$quizData || !isset($quizData['questions'])) {
-            return response()->json([
-                'success' => false,
-                'message' => 'No quiz data available'
-            ], 400);
-        }
+    
+// ============================================
+// CONTROLLER: Update quiz submission
+// ============================================
 
-        $correctCount = 0;
-        $totalQuestions = count($quizData['questions']);
-        $results = [];
-        
-        foreach ($quizData['questions'] as $index => $question) {
-            $questionKey = 'q' . ($index + 1);
-            $userAnswer = $userAnswers[$questionKey] ?? null;
-            $isCorrect = $userAnswer == $question['correct_answer'];
-            
-            if ($isCorrect) {
-                $correctCount++;
-            }
-            
-            $results[] = [
-                'question' => $question['question'],
-                'user_answer' => $userAnswer,
-                'correct_answer' => $question['correct_answer'],
-                'is_correct' => $isCorrect,
-                'explanation' => $question['explanation']
-            ];
-        }
-        
-        $score = round(($correctCount / $totalQuestions) * 100);
-        $passed = $score >= 70;
-        
-        $progress = UserExternalLessonProgress::updateOrCreate(
-            [
-                'user_id' => $user->id,
-                'lesson_id' => $id
-            ],
-            [
-                'quiz_score' => $score,
-                'quiz_attempts' => DB::raw('quiz_attempts + 1'),
-                'status' => $passed ? 'completed' : 'in_progress',
-                'completed_at' => $passed ? now() : null
-            ]
-        );
 
-        return response()->json([
-            'success' => true,
-            'score' => $score,
-            'passed' => $passed,
-            'correct_answers' => $correctCount,
-            'total_questions' => $totalQuestions,
-            'results' => $results,
-            'progress' => $progress
-        ]);
+
+public function submitQuiz(Request $request, $lessonId)
+{
+    $student = auth()->user();
+    $lesson = DB::table('external_lessons')->find($lessonId);
+    $quizData = json_decode($lesson->quiz_data, true);
+    
+    // Calculate score
+    $totalQuestions = count($quizData['questions']);
+    $correctAnswers = 0;
+    $wrongQuestionIds = [];
+    
+    foreach ($quizData['questions'] as $index => $question) {
+        $userAnswer = $request->answers["q" . ($index + 1)] ?? null;
+        if ($userAnswer === $question['correct_answer']) {
+            $correctAnswers++;
+        } else {
+            $wrongQuestionIds[] = $index + 1;
+        }
     }
+    
+    $score = round(($correctAnswers / $totalQuestions) * 100);
+    $passed = $score >= ($quizData['pass_percentage'] ?? 70);
+    
+    // SAVE PERFORMANCE DATA
+    DB::table('quiz_performance')->insert([
+        'student_id' => $student->id,
+        'lesson_id' => $lessonId,
+        'topic_id' => $lesson->topic_id,
+        'subject_id' => DB::table('external_topics')->where('id', $lesson->topic_id)->value('subject_id'),
+        'score' => $score,
+        'total_questions' => $totalQuestions,
+        'correct_answers' => $correctAnswers,
+        'wrong_answers' => $totalQuestions - $correctAnswers,
+        'wrong_question_ids' => json_encode($wrongQuestionIds),
+        'passed' => $passed,
+        'completed_at' => now(),
+        'attempt_number' => DB::table('quiz_performance')
+            ->where('student_id', $student->id)
+            ->where('lesson_id', $lessonId)
+            ->count() + 1,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+    
+    return response()->json([
+        'score' => $score,
+        'correct_answers' => $correctAnswers,
+        'total_questions' => $totalQuestions,
+        'passed' => $passed,
+        'message' => $passed ? 'Great job!' : 'Keep practicing!'
+    ]);
+}
+
 }
