@@ -24,7 +24,7 @@ use App\Http\Controllers\Api\ExternalSubjectController;
 use App\Http\Controllers\Api\ExternalLessonController;
 use App\Http\Controllers\Api\OnboardingController;
 use App\Http\Controllers\Api\MonthlyReportController;
-
+use App\Http\Controllers\Api\OakCurriculumController;
 
 // 🚀 THE YUSUF MIGRATION TOOL
 Route::get('/force-migrate-7788', function () {
@@ -52,6 +52,14 @@ Route::prefix('auth')->group(function () {
     Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
     Route::post('/reset-password', [AuthController::class, 'resetPassword']);
     Route::post('/resend-verification', [AuthController::class, 'resendVerification']);
+});
+
+
+// OAK CURRICULUM (Free Subjects)
+Route::prefix('oak')->group(function () {
+    Route::get('/curriculum', [OakCurriculumController::class, 'getCurriculum']);
+    Route::get('/lesson', [OakCurriculumController::class, 'getLesson']);
+    Route::get('/key-stages', [OakCurriculumController::class, 'getKeyStages']);
 });
 
 /*
