@@ -4,17 +4,13 @@ namespace Database\Seeders;
 
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 /**
- * Oak Demo Seeder - Creates test data + enrolls test student
+ * Oak Demo Seeder - Fixed for any database structure
  * 
- * Creates:
- * 1. Demo subject (Mathematics Year 1)
- * 2. Demo topic (Counting)
- * 3. 3 Demo lessons with WORKING videos
- * 4. Enrolls a test student (or all Year 1 students)
- * 
- * Run: php artisan db:seed --class=OakDemoSeeder
+ * Creates demo data WITHOUT auto-enrollment
+ * Manual enrollment instructions provided
  */
 class OakDemoSeeder extends Seeder
 {
@@ -47,45 +43,79 @@ class OakDemoSeeder extends Seeder
         $this->info("✅ Created topic ID: {$topicId}");
         
         // 3. CREATE 3 DEMO LESSONS WITH WORKING VIDEOS
-        $this->createDemoLesson($topicId, 1, 
-            'Counting to 10', 
-            'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8',
-            'Learn to count from 1 to 10 confidently. Practice counting objects and saying numbers in order.'
-        );
+        $lessons = [
+            [
+                'title' => 'Counting to 10',
+                'description' => 'Learn to count from 1 to 10 confidently. Practice counting objects and saying numbers in order.',
+            ],
+            [
+                'title' => 'Counting to 20',
+                'description' => 'Extend your counting skills to 20. Count objects and recognize numerals up to 20.',
+            ],
+            [
+                'title' => 'One More and One Less',
+                'description' => 'Understand what happens when we add one more or take one away. See how numbers are connected.',
+            ],
+        ];
         
-        $this->createDemoLesson($topicId, 2, 
-            'Counting to 20',
-            'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8',
-            'Extend your counting skills to 20. Count objects and recognize numerals up to 20.'
-        );
-        
-        $this->createDemoLesson($topicId, 3, 
-            'One More and One Less',
-            'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8',
-            'Understand what happens when we add one more or take one away. See how numbers are connected.'
-        );
+        foreach ($lessons as $index => $lesson) {
+            $this->createDemoLesson($topicId, $index + 1, $lesson['title'], $lesson['description']);
+        }
         
         $this->info("✅ Created 3 demo lessons");
         
-        // 4. AUTO-ENROLL STUDENTS
-        $this->enrollStudents($subjectId);
-        
         $this->info('');
-        $this->info('🎉 DEMO DATA COMPLETE!');
+        $this->info('🎉 DEMO DATA CREATED!');
+        $this->info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         $this->info('');
-        $this->info('📺 To view the lessons:');
-        $this->info('   1. Login as a Year 1 student');
-        $this->info('   2. Go to: /courses or /external-subjects');
-        $this->info('   3. Click "Mathematics Year 1 (DEMO)"');
-        $this->info('   4. Click "Week 1: Counting and Place Value"');
-        $this->info('   5. You\'ll see 3 lessons with WORKING videos!');
+        $this->info('📋 SUBJECT CREATED:');
+        $this->info("   ID: {$subjectId}");
+        $this->info('   Name: Mathematics Year 1 (DEMO)');
+        $this->info('   Topics: 1 (Week 1: Counting)');
+        $this->info('   Lessons: 3 (with working videos)');
         $this->info('');
-        $this->info('🔗 Direct link: /external-subjects/' . $subjectId);
+        $this->info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        $this->info('');
+        $this->info('👥 TO ENROLL STUDENTS:');
+        $this->info('');
+        $this->info('OPTION 1 - Via Onboarding:');
+        $this->info('  1. Sign up a new student');
+        $this->info('  2. Select "Year 1" during onboarding');
+        $this->info('  3. Select "Mathematics"');
+        $this->info('  4. The demo subject should appear!');
+        $this->info('');
+        $this->info('OPTION 2 - Manual SQL:');
+        $this->info("  INSERT INTO user_external_subject_enrollments");
+        $this->info("  (user_id, external_subject_id, enrolled_at, created_at, updated_at)");
+        $this->info("  VALUES");
+        $this->info("  ([student_id], {$subjectId}, NOW(), NOW(), NOW());");
+        $this->info('');
+        $this->info('OPTION 3 - Enroll ALL Students:');
+        $this->info("  Run this in MySQL:");
+        $this->info("  ");
+        $this->info("  INSERT INTO user_external_subject_enrollments");
+        $this->info("  (user_id, external_subject_id, enrolled_at, created_at, updated_at)");
+        $this->info("  SELECT id, {$subjectId}, NOW(), NOW(), NOW()");
+        $this->info("  FROM users WHERE role = 'student';");
+        $this->info('');
+        $this->info('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        $this->info('');
+        $this->info('📺 TO VIEW LESSONS:');
+        $this->info('  1. Login as enrolled student');
+        $this->info('  2. Go to: /courses or /external-subjects');
+        $this->info("  3. Click: Mathematics Year 1 (DEMO)");
+        $this->info('  4. Click: Week 1: Counting');
+        $this->info('  5. You\'ll see 3 lessons with videos!');
+        $this->info('');
+        $this->info("🔗 Direct link: /external-subjects/{$subjectId}");
         $this->info('');
     }
     
-    private function createDemoLesson($topicId, $order, $title, $videoUrl, $description)
+    private function createDemoLesson($topicId, $order, $title, $description)
     {
+        // Using Mux public test stream - it WILL work!
+        $videoUrl = 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8';
+        
         DB::table('external_lessons')->insert([
             'topic_id' => $topicId,
             'title' => $title,
@@ -166,52 +196,6 @@ class OakDemoSeeder extends Seeder
         ]);
         
         $this->info("   ✓ {$title}");
-    }
-    
-    private function enrollStudents($subjectId)
-    {
-        $this->info('');
-        $this->info('👥 Enrolling students...');
-        
-        // OPTION 1: Enroll ALL Year 1 students
-        $year1Students = DB::table('users')
-            ->where('role', 'student')
-            ->where('grade', 'Year 1') // Adjust if your column name is different
-            ->pluck('id');
-        
-        if ($year1Students->count() > 0) {
-            foreach ($year1Students as $studentId) {
-                // Check if already enrolled
-                $exists = DB::table('user_external_subject_enrollments')
-                    ->where('user_id', $studentId)
-                    ->where('external_subject_id', $subjectId)
-                    ->exists();
-                
-                if (!$exists) {
-                    DB::table('user_external_subject_enrollments')->insert([
-                        'user_id' => $studentId,
-                        'external_subject_id' => $subjectId,
-                        'enrolled_at' => now(),
-                        'created_at' => now(),
-                        'updated_at' => now(),
-                    ]);
-                }
-            }
-            
-            $this->info("✅ Enrolled {$year1Students->count()} Year 1 students");
-        } else {
-            $this->info("⚠️  No Year 1 students found");
-            $this->info("   Create a test Year 1 student to see the demo lessons");
-        }
-        
-        // OPTION 2: Create a test student if none exist
-        if ($year1Students->count() === 0) {
-            $this->info('');
-            $this->info('💡 TIP: Create a test Year 1 student:');
-            $this->info('   1. Sign up as a new student');
-            $this->info('   2. Select "Year 1" during onboarding');
-            $this->info('   3. The demo lessons will appear automatically!');
-        }
     }
     
     private function info($message)
