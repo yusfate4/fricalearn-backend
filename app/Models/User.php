@@ -2,7 +2,7 @@
 
 namespace App\Models;
 
-// 🚀 REMOVED: MustVerifyEmail interface
+
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -30,6 +30,9 @@ class User extends Authenticatable
         'is_active',
         'last_login_at',
         'email_verified_at',
+        // 🌍 Dual Curriculum fields
+        'curriculum_region',
+        'payment_currency',
     ];
 
     /**
@@ -45,15 +48,15 @@ class User extends Authenticatable
      */
     protected $casts = [
         'email_verified_at' => 'datetime',
-        'last_login_at' => 'datetime',
-        'is_active' => 'boolean',
-        'is_admin' => 'boolean',
+        'last_login_at'     => 'datetime',
+        'is_active'         => 'boolean',
+        'is_admin'          => 'boolean',
     ];
 
     /**
      * Automatically append these attributes to JSON responses.
      */
-    protected $appends = ['admin_display_name'];
+    protected $appends = ['admin_display_name', 'curriculum_display'];
 
     /*
     |--------------------------------------------------------------------------
@@ -119,6 +122,44 @@ class User extends Authenticatable
 
     /*
     |--------------------------------------------------------------------------
+    | External Subjects (Dual Curriculum)
+    |--------------------------------------------------------------------------
+    */
+
+    /**
+     * All external subjects this user is enrolled in.
+     */
+    public function externalSubjects(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            ExternalSubject::class,
+            'user_external_subject_enrollments',
+            'user_id',
+            'external_subject_id'
+        )->withPivot('enrolled_at', 'progress_percentage')
+         ->withTimestamps();
+    }
+
+    /**
+     * External subjects filtered to user's own curriculum region only.
+     */
+    public function curriculumSubjects(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            ExternalSubject::class,
+            'user_external_subject_enrollments',
+            'user_id',
+            'external_subject_id'
+        )->withPivot('enrolled_at', 'progress_percentage')
+         ->withTimestamps()
+         ->where(function ($query) {
+             $query->where('external_subjects.curriculum_region', $this->curriculum_region)
+                   ->orWhere('external_subjects.curriculum_region', 'both');
+         });
+    }
+
+    /*
+    |--------------------------------------------------------------------------
     | Role Helper Methods
     |--------------------------------------------------------------------------
     */
@@ -150,6 +191,44 @@ class User extends Authenticatable
 
     /*
     |--------------------------------------------------------------------------
+    | Curriculum Helper Methods
+    |--------------------------------------------------------------------------
+    */
+
+    /**
+     * Is this user on the UK curriculum?
+     */
+    public function isUkCurriculum(): bool
+    {
+        return $this->curriculum_region === 'uk';
+    }
+
+    /**
+     * Is this user on the Nigerian curriculum?
+     */
+    public function isNigerianCurriculum(): bool
+    {
+        return $this->curriculum_region === 'nigeria';
+    }
+
+    /**
+     * Is this user paying in GBP?
+     */
+    public function isGbpPayer(): bool
+    {
+        return $this->payment_currency === 'GBP';
+    }
+
+    /**
+     * Is this user paying in NGN?
+     */
+    public function isNgnPayer(): bool
+    {
+        return $this->payment_currency === 'NGN';
+    }
+
+    /*
+    |--------------------------------------------------------------------------
     | Scopes & Accessors
     |--------------------------------------------------------------------------
     */
@@ -169,22 +248,37 @@ class User extends Authenticatable
         return $query->where('is_active', true);
     }
 
+    public function scopeUkStudents($query)
+    {
+        return $query->where('curriculum_region', 'uk');
+    }
+
+    public function scopeNigerianStudents($query)
+    {
+        return $query->where('curriculum_region', 'nigeria');
+    }
+
     public function getAdminDisplayNameAttribute(): string
     {
         if ($this->role === 'parent') {
             $childrenNames = $this->children->pluck('name')->implode(', ');
-            return $childrenNames 
-                ? "{$this->name} (Parent of {$childrenNames})" 
+            return $childrenNames
+                ? "{$this->name} (Parent of {$childrenNames})"
                 : "{$this->name} (Parent)";
         }
-        
+
         return $this->name;
     }
 
-    public function externalSubjects()
-{
-    return $this->belongsToMany(ExternalSubject::class, 'user_external_subject_enrollments', 'user_id', 'external_subject_id')
-                ->withPivot('enrolled_at', 'progress_percentage')
-                ->withTimestamps();
-}
+    /**
+     * Human-readable curriculum label for display in UI.
+     */
+    public function getCurriculumDisplayAttribute(): string
+    {
+        return match($this->curriculum_region) {
+            'nigeria' => '🇳🇬 Nigerian Curriculum (NERDC)',
+            'uk'      => '🇬🇧 UK National Curriculum (Oak)',
+            default   => 'Not set',
+        };
+    }
 }

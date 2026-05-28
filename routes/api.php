@@ -56,11 +56,26 @@ Route::prefix('auth')->group(function () {
 });
 
 
-// OAK CURRICULUM (Free Subjects)
-Route::prefix('oak')->group(function () {
-    Route::get('/curriculum', [OakCurriculumController::class, 'getCurriculum']);
-    Route::get('/lesson', [OakCurriculumController::class, 'getLesson']);
+// OAK CURRICULUM (Subjects)
+Route::prefix('oak')->middleware('auth:sanctum')->group(function () {
+    Route::get('/test', [OakCurriculumController::class, 'testConnection']);
     Route::get('/key-stages', [OakCurriculumController::class, 'getKeyStages']);
+    Route::get('/subjects', [OakCurriculumController::class, 'getSubjects']);
+    Route::get('/programmes', [OakCurriculumController::class, 'getProgrammes']);
+    Route::get('/units', [OakCurriculumController::class, 'getUnits']);
+    Route::get('/lessons', [OakCurriculumController::class, 'getLessons']);
+    Route::get('/lesson', [OakCurriculumController::class, 'getLesson']);
+});
+
+// Curriculum routes
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('/my-curriculum', function (Request $request) {
+        $user = $request->user();
+        
+        return DB::table('user_enrolled_subjects_filtered')
+            ->where('user_id', $user->id)
+            ->get();
+    });
 });
 
 /*

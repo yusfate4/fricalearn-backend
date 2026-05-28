@@ -39,4 +39,9 @@ return [
     'key' => env('OPENAI_API_KEY'),
 ],
 
+ 'oak' => [
+        'api_url' => env('OAK_API_URL'),
+        'api_key' => env('OAK_API_KEY'),
+    ],
+
 ];
