@@ -21,183 +21,81 @@ class OnboardingController extends Controller
         $this->autoEnrollmentService = $autoEnrollmentService;
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Course Catalogue
-    |--------------------------------------------------------------------------
-    | NGN (Paystack) → Nigerian NERDC curriculum
-    | GBP (Stripe)   → UK National Curriculum via Oak API
-    |--------------------------------------------------------------------------
-    */
+    // =========================================================
+    // COURSES DATA
+    // =========================================================
 
-    private function getCoursesData(string $currency = 'GBP'): array
+    private function getUkCoursesData(): array
     {
-        $isNigeria = $currency === 'NGN';
-
-        $coreCourses = $isNigeria
-            ? [
-                [
-                    'id'          => 'maths',
-                    'name'        => 'Mathematics (Nigerian Curriculum)',
-                    'description' => 'NERDC-aligned maths: numbers, operations, shapes – Primary 1–6, JSS 1–3',
-                    'price_ngn'   => 20000,
-                    'price_gbp'   => 0,
-                    'type'        => 'paid',
-                    'curriculum'  => 'nigeria',
-                    'grades'      => [1, 2, 3, 4, 5, 6, 7, 8, 9], // Primary 1-6, JSS 1-3
-                    'icon'        => '🔢',
-                ],
-                [
-                    'id'          => 'english',
-                    'name'        => 'English Language (Nigerian Curriculum)',
-                    'description' => 'Reading, writing and comprehension following NERDC framework',
-                    'price_ngn'   => 20000,
-                    'price_gbp'   => 0,
-                    'type'        => 'paid',
-                    'curriculum'  => 'nigeria',
-                    'grades'      => [1, 2, 3, 4, 5, 6, 7, 8, 9],
-                    'icon'        => '📚',
-                ],
-            ]
-            : [
-                [
-                    'id'          => 'maths',
-                    'name'        => 'Mathematics (UK Curriculum)',
-                    'description' => 'Master essential maths skills aligned with UK Key Stages 1–4 (Oak National Academy)',
-                    'price_ngn'   => 0,
-                    'price_gbp'   => 13.33,
-                    'type'        => 'paid',
-                    'curriculum'  => 'uk',
-                    'grades'      => [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
-                    'icon'        => '🔢',
-                ],
-                [
-                    'id'          => 'english',
-                    'name'        => 'English (UK Curriculum)',
-                    'description' => 'Develop reading, writing, and comprehension skills (Oak National Academy)',
-                    'price_ngn'   => 0,
-                    'price_gbp'   => 13.33,
-                    'type'        => 'paid',
-                    'curriculum'  => 'uk',
-                    'grades'      => [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
-                    'icon'        => '📚',
-                ],
-            ];
-
-        // African languages are available to everyone (free scholarship)
-        $languages = [
+        return [
             [
-                'id'                  => 'yoruba',
-                'name'                => 'Yoruba Language',
-                'description'         => 'Connect with Yoruba heritage through language and culture',
-                'price_ngn'           => 0,
-                'price_gbp'           => 0,
-                'type'                => 'free',
-                'curriculum'          => 'both',
-                'original_price_ngn'  => 20000,
-                'original_price_gbp'  => 13.33,
-                'scholarship'         => true,
-                'icon'                => '🇳🇬',
+                'id' => 'maths', 'name' => 'Mathematics (UK Curriculum)',
+                'description' => 'Master essential maths skills aligned with UK Key Stages 1-4',
+                'price_ngn' => 0, 'price_gbp' => 13.33, 'type' => 'paid',
+                'grades' => [1,2,3,4,5,6,7,8,9,10,11],
+                'grade_labels' => ['Year 1','Year 2','Year 3','Year 4','Year 5','Year 6',
+                                   'Year 7','Year 8','Year 9','Year 10','Year 11'],
+                'curriculum' => 'uk', 'source' => 'Oak National Academy', 'icon' => '🔢',
             ],
             [
-                'id'                  => 'hausa',
-                'name'                => 'Hausa Language',
-                'description'         => 'Learn Hausa language and cultural traditions',
-                'price_ngn'           => 0,
-                'price_gbp'           => 0,
-                'type'                => 'free',
-                'curriculum'          => 'both',
-                'original_price_ngn'  => 20000,
-                'original_price_gbp'  => 13.33,
-                'scholarship'         => true,
-                'icon'                => '🇳🇬',
+                'id' => 'english', 'name' => 'English (UK Curriculum)',
+                'description' => 'Develop reading, writing, and comprehension skills',
+                'price_ngn' => 0, 'price_gbp' => 13.33, 'type' => 'paid',
+                'grades' => [1,2,3,4,5,6,7,8,9,10,11],
+                'grade_labels' => ['Year 1','Year 2','Year 3','Year 4','Year 5','Year 6',
+                                   'Year 7','Year 8','Year 9','Year 10','Year 11'],
+                'curriculum' => 'uk', 'source' => 'Oak National Academy', 'icon' => '📚',
             ],
-            [
-                'id'                  => 'igbo',
-                'name'                => 'Igbo Language',
-                'description'         => 'Explore Igbo language and heritage',
-                'price_ngn'           => 0,
-                'price_gbp'           => 0,
-                'type'                => 'free',
-                'curriculum'          => 'both',
-                'original_price_ngn'  => 20000,
-                'original_price_gbp'  => 13.33,
-                'scholarship'         => true,
-                'icon'                => '🇳🇬',
-            ],
+            ['id' => 'yoruba', 'name' => 'Yoruba Language', 'description' => 'Connect with Yoruba heritage through language and culture', 'price_ngn' => 0, 'price_gbp' => 0, 'type' => 'free', 'original_price_gbp' => 13.33, 'scholarship' => true, 'curriculum' => 'both', 'icon' => '🇳🇬'],
+            ['id' => 'hausa', 'name' => 'Hausa Language', 'description' => 'Learn Hausa language and cultural traditions', 'price_ngn' => 0, 'price_gbp' => 0, 'type' => 'free', 'original_price_gbp' => 13.33, 'scholarship' => true, 'curriculum' => 'both', 'icon' => '🇳🇬'],
+            ['id' => 'igbo', 'name' => 'Igbo Language', 'description' => 'Explore Igbo language and heritage', 'price_ngn' => 0, 'price_gbp' => 0, 'type' => 'free', 'original_price_gbp' => 13.33, 'scholarship' => true, 'curriculum' => 'both', 'icon' => '🇳🇬'],
         ];
-
-        return array_merge($coreCourses, $languages);
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | GET /api/onboarding/courses
-    |--------------------------------------------------------------------------
-    */
+    private function getNigerianCoursesData(): array
+    {
+        return [
+            [
+                'id' => 'maths', 'name' => 'Mathematics (Nigerian Curriculum)',
+                'description' => 'Master maths skills aligned with NERDC Primary & JSS curriculum',
+                'price_ngn' => 20000, 'price_gbp' => 0, 'type' => 'paid',
+                'grades' => [1,2,3,4,5,6,7,8,9],
+                'grade_labels' => ['Primary 1','Primary 2','Primary 3','Primary 4','Primary 5','Primary 6','JSS 1','JSS 2','JSS 3'],
+                'curriculum' => 'nigeria', 'source' => 'NERDC', 'icon' => '🔢',
+            ],
+            [
+                'id' => 'english', 'name' => 'English Language (Nigerian Curriculum)',
+                'description' => 'Develop reading, writing, and comprehension skills',
+                'price_ngn' => 20000, 'price_gbp' => 0, 'type' => 'paid',
+                'grades' => [1,2,3,4,5,6,7,8,9],
+                'grade_labels' => ['Primary 1','Primary 2','Primary 3','Primary 4','Primary 5','Primary 6','JSS 1','JSS 2','JSS 3'],
+                'curriculum' => 'nigeria', 'source' => 'NERDC', 'icon' => '📚',
+            ],
+            ['id' => 'yoruba', 'name' => 'Yoruba Language', 'description' => 'Connect with Yoruba heritage through language and culture', 'price_ngn' => 0, 'price_gbp' => 0, 'type' => 'free', 'original_price_ngn' => 20000, 'scholarship' => true, 'curriculum' => 'both', 'icon' => '🇳🇬'],
+            ['id' => 'hausa', 'name' => 'Hausa Language', 'description' => 'Learn Hausa language and cultural traditions', 'price_ngn' => 0, 'price_gbp' => 0, 'type' => 'free', 'original_price_ngn' => 20000, 'scholarship' => true, 'curriculum' => 'both', 'icon' => '🇳🇬'],
+            ['id' => 'igbo', 'name' => 'Igbo Language', 'description' => 'Explore Igbo language and heritage', 'price_ngn' => 0, 'price_gbp' => 0, 'type' => 'free', 'original_price_ngn' => 20000, 'scholarship' => true, 'curriculum' => 'both', 'icon' => '🇳🇬'],
+        ];
+    }
 
+    /**
+     * GET /onboarding/courses?currency=NGN|GBP
+     */
     public function getCourses(Request $request)
     {
-        $currency = strtoupper($request->query('currency', 'GBP'));
+        $currency = $request->query('currency', 'GBP');
+        $courses  = $currency === 'NGN' ? $this->getNigerianCoursesData() : $this->getUkCoursesData();
 
         return response()->json([
             'success'           => true,
             'curriculum_region' => $currency === 'NGN' ? 'nigeria' : 'uk',
-            'courses'           => $this->getCoursesData($currency),
-        ]);
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | GET /api/onboarding/grades
-    | Returns the correct grade labels for the chosen currency/curriculum
-    |--------------------------------------------------------------------------
-    */
-
-    public function getGrades(Request $request)
-    {
-        $currency = strtoupper($request->query('currency', 'GBP'));
-
-        if ($currency === 'NGN') {
-            $grades = [
-                ['value' => 1,  'label' => 'Primary 1', 'key_stage' => 'PRIMARY'],
-                ['value' => 2,  'label' => 'Primary 2', 'key_stage' => 'PRIMARY'],
-                ['value' => 3,  'label' => 'Primary 3', 'key_stage' => 'PRIMARY'],
-                ['value' => 4,  'label' => 'Primary 4', 'key_stage' => 'PRIMARY'],
-                ['value' => 5,  'label' => 'Primary 5', 'key_stage' => 'PRIMARY'],
-                ['value' => 6,  'label' => 'Primary 6', 'key_stage' => 'PRIMARY'],
-                ['value' => 7,  'label' => 'JSS 1',     'key_stage' => 'JSS'],
-                ['value' => 8,  'label' => 'JSS 2',     'key_stage' => 'JSS'],
-                ['value' => 9,  'label' => 'JSS 3',     'key_stage' => 'JSS'],
-            ];
-        } else {
-            $grades = [
-                ['value' => 1,  'label' => 'Year 1',  'key_stage' => 'KS1'],
-                ['value' => 2,  'label' => 'Year 2',  'key_stage' => 'KS1'],
-                ['value' => 3,  'label' => 'Year 3',  'key_stage' => 'KS2'],
-                ['value' => 4,  'label' => 'Year 4',  'key_stage' => 'KS2'],
-                ['value' => 5,  'label' => 'Year 5',  'key_stage' => 'KS2'],
-                ['value' => 6,  'label' => 'Year 6',  'key_stage' => 'KS2'],
-                ['value' => 7,  'label' => 'Year 7',  'key_stage' => 'KS3'],
-                ['value' => 8,  'label' => 'Year 8',  'key_stage' => 'KS3'],
-                ['value' => 9,  'label' => 'Year 9',  'key_stage' => 'KS3'],
-                ['value' => 10, 'label' => 'Year 10', 'key_stage' => 'KS4'],
-            ];
-        }
-
-        return response()->json([
-            'success'           => true,
             'currency'          => $currency,
-            'curriculum_region' => $currency === 'NGN' ? 'nigeria' : 'uk',
-            'grades'            => $grades,
+            'courses'           => $courses,
         ]);
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | POST /api/onboarding/calculate-pricing
-    |--------------------------------------------------------------------------
-    */
+    // =========================================================
+    // CALCULATE PRICING
+    // =========================================================
 
     public function calculatePricing(Request $request)
     {
@@ -207,51 +105,47 @@ class OnboardingController extends Controller
             'currency'           => 'required|in:NGN,GBP',
         ]);
 
-        $courses   = $this->getCoursesData($validated['currency']);
+        $courses = $validated['currency'] === 'NGN'
+            ? $this->getNigerianCoursesData()
+            : $this->getUkCoursesData();
+
         $breakdown = [];
         $subtotal  = 0;
 
         foreach ($validated['selected_courses'] as $courseId) {
             $course = collect($courses)->firstWhere('id', $courseId);
-
             if ($course) {
-                $amount = $validated['currency'] === 'NGN'
-                    ? $course['price_ngn']
-                    : $course['price_gbp'];
-
+                $amount = $validated['currency'] === 'NGN' ? $course['price_ngn'] : $course['price_gbp'];
                 $breakdown[] = [
-                    'course'    => $courseId,
-                    'name'      => explode(' ', $course['name'])[0],
-                    'amount'    => $amount,
-                    'is_free'   => $course['type'] === 'free',
-                    'currency'  => $validated['currency'],
+                    'course'   => $courseId,
+                    'name'     => $course['name'],
+                    'amount'   => $amount,
+                    'is_free'  => $course['type'] === 'free',
+                    'currency' => $validated['currency'],
                 ];
-
                 $subtotal += $amount;
             }
         }
 
         return response()->json([
-            'success'    => true,
-            'currency'   => $validated['currency'],
-            'breakdown'  => $breakdown,
-            'subtotal'   => $subtotal,
-            'discount'   => 0,
-            'total'      => $subtotal,
+            'success'   => true,
+            'currency'  => $validated['currency'],
+            'breakdown' => $breakdown,
+            'subtotal'  => $subtotal,
+            'discount'  => 0,
+            'total'     => $subtotal,
         ]);
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | GET /api/onboarding/bank-details
-    |--------------------------------------------------------------------------
-    */
+    // =========================================================
+    // BANK DETAILS
+    // =========================================================
 
     public function getBankDetails()
     {
         return response()->json([
-            'success'              => true,
-            'bank_accounts'        => [
+            'success' => true,
+            'bank_accounts' => [
                 'ngn' => [
                     'currency'       => 'NGN',
                     'bank_name'      => 'PROVIDUS BANK',
@@ -268,7 +162,7 @@ class OnboardingController extends Controller
                 ],
             ],
             'payment_instructions' => [
-                'Use the child\'s name as payment reference',
+                "Use the child's name as payment reference",
                 'Upload clear photo or PDF of payment receipt',
                 'Access is granted immediately upon submission',
                 'Admin will verify payment within 24 hours',
@@ -276,11 +170,9 @@ class OnboardingController extends Controller
         ]);
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | POST /api/onboarding/submit
-    |--------------------------------------------------------------------------
-    */
+    // =========================================================
+    // SUBMIT ONBOARDING
+    // =========================================================
 
     public function submitOnboarding(Request $request)
     {
@@ -291,45 +183,40 @@ class OnboardingController extends Controller
             'gender'             => 'required|in:male,female',
             'selected_courses'   => 'required|array',
             'selected_courses.*' => 'required|string',
-            'maths_grade'        => 'nullable|integer|min:1|max:10',
-            'english_grade'      => 'nullable|integer|min:1|max:10',
+            'maths_grade'        => 'nullable|integer|min:1|max:11',
+            'english_grade'      => 'nullable|integer|min:1|max:11',
             'currency'           => 'required|in:NGN,GBP',
             'total_amount'       => 'required|numeric',
             'receipt'            => 'required|file|mimes:jpg,jpeg,png,pdf|max:5120',
         ]);
 
-        // 🌍 Determine curriculum region from payment currency
+        // Derive curriculum from currency
         $curriculumRegion = $validated['currency'] === 'NGN' ? 'nigeria' : 'uk';
 
         DB::beginTransaction();
 
         try {
-            // ------------------------------------------------------------------
-            // 1. Create child user account
-            // ------------------------------------------------------------------
-            $childEmail = $this->generateChildEmail($validated['child_name']);
+            // ── 1. Create child user ──────────────────────────────
+            $childEmail    = $this->generateChildEmail($validated['child_name']);
+            $childPassword = Str::random(12);
 
             $child = User::create([
                 'name'              => $validated['child_name'],
                 'email'             => $childEmail,
-                'password'          => Hash::make(Str::random(16)),
+                'password'          => Hash::make($childPassword),
                 'role'              => 'student',
-                'is_active'         => true,
-                // 🌍 Set curriculum based on payment currency
+                'birth_date'        => $validated['birth_date'],
+                'gender'            => $validated['gender'],
+                'selected_courses'  => json_encode($validated['selected_courses']),
+                'maths_grade'       => $validated['maths_grade'],
+                'english_grade'     => $validated['english_grade'],
+                'onboarding_completed' => true,
+                // 🌍 Dual-curriculum fields
                 'curriculum_region' => $curriculumRegion,
                 'payment_currency'  => $validated['currency'],
             ]);
 
-            \Log::info('Onboarding: Child created', [
-                'child_id'          => $child->id,
-                'name'              => $child->name,
-                'curriculum_region' => $curriculumRegion,
-                'payment_currency'  => $validated['currency'],
-            ]);
-
-            // ------------------------------------------------------------------
-            // 2. Link parent ↔ child
-            // ------------------------------------------------------------------
+            // ── 2. Link parent-child ──────────────────────────────
             DB::table('parent_child')->insert([
                 'parent_id'  => $validated['parent_id'],
                 'child_id'   => $child->id,
@@ -337,9 +224,7 @@ class OnboardingController extends Controller
                 'updated_at' => now(),
             ]);
 
-            // ------------------------------------------------------------------
-            // 3. Upload receipt
-            // ------------------------------------------------------------------
+            // ── 3. Upload receipt ─────────────────────────────────
             $receiptPath = null;
             if ($request->hasFile('receipt')) {
                 $file        = $request->file('receipt');
@@ -347,9 +232,7 @@ class OnboardingController extends Controller
                 $receiptPath = $file->storeAs('receipts', $fileName, 'public');
             }
 
-            // ------------------------------------------------------------------
-            // 4. Create payment record
-            // ------------------------------------------------------------------
+            // ── 4. Create payment record ──────────────────────────
             $payment = EnrollmentPayment::create([
                 'parent_id'        => $validated['parent_id'],
                 'course_id'        => null,
@@ -359,80 +242,95 @@ class OnboardingController extends Controller
                 'child_name'       => $validated['child_name'],
                 'status'           => 'temporary_approved',
                 'auto_approved'    => true,
-                'includes_maths'   => in_array('maths',   $validated['selected_courses']),
+                'includes_maths'   => in_array('maths', $validated['selected_courses']),
                 'includes_english' => in_array('english', $validated['selected_courses']),
-                'includes_yoruba'  => in_array('yoruba',  $validated['selected_courses']),
-                'includes_hausa'   => in_array('hausa',   $validated['selected_courses']),
-                'includes_igbo'    => in_array('igbo',    $validated['selected_courses']),
+                'includes_yoruba'  => in_array('yoruba', $validated['selected_courses']),
+                'includes_hausa'   => in_array('hausa', $validated['selected_courses']),
+                'includes_igbo'    => in_array('igbo', $validated['selected_courses']),
             ]);
 
-            // ------------------------------------------------------------------
-            // 5. Enroll student in selected courses
-            // ------------------------------------------------------------------
+            // ── 5. Enroll in selected courses ─────────────────────
             foreach ($validated['selected_courses'] as $courseId) {
 
-                if (in_array($courseId, ['maths', 'english'])) {
+                if ($courseId === 'maths' || $courseId === 'english') {
 
-                    $subjectName = $courseId === 'maths' ? 'Mathematics' : 'English';
-                    $grade       = $courseId === 'maths'
+                    $grade = $courseId === 'maths'
                         ? $validated['maths_grade']
                         : $validated['english_grade'];
 
-                    if (!$grade) {
-                        continue;
-                    }
+                    if (!$grade) continue;
 
-                    // Build a human-readable subject name
-                    if ($curriculumRegion === 'nigeria') {
-                        $gradeLabel    = $this->getNigerianGradeLabel($grade);
-                        $fullSubjectName = "{$subjectName} {$gradeLabel}";
-                        $keyStageCode  = $this->getNigerianKeyStage($grade);
-                        $source        = 'Nigerian Curriculum (NERDC)';
-                    } else {
-                        $fullSubjectName = "{$subjectName} Year {$grade}";
-                        $keyStageCode  = $this->getUkKeyStage($grade);
-                        $source        = 'UK National Curriculum (Oak)';
-                    }
+                    if ($curriculumRegion === 'uk') {
+                        // ── UK: find the Oak-synced subject by key_stage ──
+                        $ksNum = $this->gradeToKeyStageNum($grade);
+                        $ksCode = 'KS' . $ksNum; // e.g. "KS1"
 
-                    // Resolve grade_level_id from the grade_levels table
-                    $gradeLevel = DB::table('grade_levels')
-                        ->where('region', $curriculumRegion)
-                        ->where('order_index', $grade)
-                        ->first();
+                        // Oak sync names subjects "Maths (KS1)" or "English (KS2)"
+                        $oakKeyword = $courseId === 'maths' ? 'Maths' : 'English';
 
-                    $gradeLevelId = $gradeLevel?->id ?? null;
+                        $externalSubject = DB::table('external_subjects')
+                            ->where('source', 'Oak National Academy')
+                            ->where('key_stage', $ksCode)
+                            ->where('name', 'like', "%{$oakKeyword}%")
+                            ->where('curriculum_region', 'uk')
+                            ->first();
 
-                    // Find or create the external subject
-                    $externalSubject = DB::table('external_subjects')
-                        ->where('name', '=', $fullSubjectName)
-                        ->where('curriculum_region', $curriculumRegion)
-                        ->first();
-
-                    \Log::info('Onboarding: Looking for external subject', [
-                        'searching_for'     => $fullSubjectName,
-                        'curriculum_region' => $curriculumRegion,
-                        'found'             => $externalSubject ? 'YES' : 'NO',
-                    ]);
-
-                    if (!$externalSubject) {
-                        $subjectId = DB::table('external_subjects')->insertGetId([
-                            'name'              => $fullSubjectName,
-                            'key_stage'         => $keyStageCode,
-                            'year_group'        => $grade,
-                            'source'            => $source,
-                            'curriculum_region' => $curriculumRegion,
-                            'grade_level_id'    => $gradeLevelId,
-                            'framework_code'    => $keyStageCode,
-                            'created_at'        => now(),
-                            'updated_at'        => now(),
+                        \Log::info('Onboarding UK: Looking for Oak subject', [
+                            'key_stage'   => $ksCode,
+                            'keyword'     => $oakKeyword,
+                            'found'       => $externalSubject ? $externalSubject->name : 'NOT FOUND',
+                            'child_id'    => $child->id,
                         ]);
 
-                        \Log::info('Onboarding: Created external subject', [
-                            'id'   => $subjectId,
-                            'name' => $fullSubjectName,
-                        ]);
+                        if (!$externalSubject) {
+                            // Oak content not synced for this KS yet — create placeholder
+                            $subjectName = ($courseId === 'maths' ? 'Maths' : 'English') . " ({$ksCode})";
+                            $subjectId   = DB::table('external_subjects')->insertGetId([
+                                'name'              => $subjectName,
+                                'key_stage'         => $ksCode,
+                                'year_group'        => $grade,
+                                'source'            => 'Oak National Academy',
+                                'curriculum_region' => 'uk',
+                                'framework_code'    => $ksCode,
+                                'created_at'        => now(),
+                                'updated_at'        => now(),
+                            ]);
+                            \Log::warning('Onboarding UK: Created placeholder subject', ['name' => $subjectName]);
+                        } else {
+                            $subjectId = $externalSubject->id;
+                        }
+
                     } else {
-                        $subjectId = $externalSubject->id;
+                        // ── Nigeria: find the NERDC seeded subject ────────
+                        $gradeLabel  = $grade <= 6 ? "Primary {$grade}" : "JSS " . ($grade - 6);
+                        $subjectName = ($courseId === 'maths' ? 'Mathematics' : 'English') . " {$gradeLabel}";
+
+                        $externalSubject = DB::table('external_subjects')
+                            ->where('source', 'NERDC')
+                            ->where('name', $subjectName)
+                            ->where('curriculum_region', 'nigeria')
+                            ->first();
+
+                        \Log::info('Onboarding Nigeria: Looking for NERDC subject', [
+                            'searching_for' => $subjectName,
+                            'found'         => $externalSubject ? 'YES' : 'NOT FOUND',
+                            'child_id'      => $child->id,
+                        ]);
+
+                        if (!$externalSubject) {
+                            $subjectId = DB::table('external_subjects')->insertGetId([
+                                'name'              => $subjectName,
+                                'key_stage'         => $grade <= 6 ? 'PRIMARY' : 'JSS',
+                                'year_group'        => $grade,
+                                'source'            => 'NERDC',
+                                'curriculum_region' => 'nigeria',
+                                'framework_code'    => $grade <= 6 ? 'PRIMARY' : 'JSS',
+                                'created_at'        => now(),
+                                'updated_at'        => now(),
+                            ]);
+                        } else {
+                            $subjectId = $externalSubject->id;
+                        }
                     }
 
                     // Enroll the student
@@ -445,10 +343,16 @@ class OnboardingController extends Controller
                         'updated_at'          => now(),
                     ]);
 
+                    \Log::info('Onboarding: Enrolled', [
+                        'student_id'  => $child->id,
+                        'subject_id'  => $subjectId,
+                        'curriculum'  => $curriculumRegion,
+                    ]);
+
                 } else {
-                    // Language courses (Yoruba / Hausa / Igbo) → course_enrollments
+                    // ── Language courses ──────────────────────────────
                     $courseName = ucfirst($courseId);
-                    $course     = DB::table('courses')
+                    $course = DB::table('courses')
                         ->where('title', 'like', "%{$courseName}%")
                         ->first();
 
@@ -464,9 +368,7 @@ class OnboardingController extends Controller
                 }
             }
 
-            // ------------------------------------------------------------------
-            // 6. Initialise student profile
-            // ------------------------------------------------------------------
+            // ── 6. Initialize student profile ─────────────────────
             $learningLanguage = 'Yoruba';
             if (in_array('hausa', $validated['selected_courses'])) {
                 $learningLanguage = 'Hausa';
@@ -477,9 +379,9 @@ class OnboardingController extends Controller
             DB::table('student_profiles')->updateOrInsert(
                 ['user_id' => $child->id],
                 [
-                    'current_week'       => 1,
-                    'week_unlocked_at'   => json_encode(['1' => now()->toDateTimeString()]),
-                    'learning_language'  => $learningLanguage,
+                    'current_week'     => 1,
+                    'week_unlocked_at' => json_encode(['1' => now()->toDateTimeString()]),
+                    'learning_language' => $learningLanguage,
                 ]
             );
 
@@ -495,6 +397,7 @@ class OnboardingController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
+            \Log::error('Onboarding failed: ' . $e->getMessage());
 
             return response()->json([
                 'success' => false,
@@ -503,11 +406,17 @@ class OnboardingController extends Controller
         }
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Private Helpers
-    |--------------------------------------------------------------------------
-    */
+    // =========================================================
+    // HELPERS
+    // =========================================================
+
+    private function gradeToKeyStageNum(int $grade): int
+    {
+        if ($grade <= 2)  return 1;
+        if ($grade <= 6)  return 2;
+        if ($grade <= 9)  return 3;
+        return 4;
+    }
 
     private function generateChildEmail(string $childName): string
     {
@@ -522,48 +431,5 @@ class OnboardingController extends Controller
         }
 
         return $email;
-    }
-
-    /**
-     * Map numeric grade (1–10) to UK Key Stage code
-     */
-    private function getUkKeyStage(int $grade): string
-    {
-        return match(true) {
-            $grade <= 2  => 'KS1',
-            $grade <= 6  => 'KS2',
-            $grade <= 9  => 'KS3',
-            default      => 'KS4',
-        };
-    }
-
-    /**
-     * Map numeric grade (1–9) to Nigerian framework code
-     */
-    private function getNigerianKeyStage(int $grade): string
-    {
-        return match(true) {
-            $grade <= 6 => 'PRIMARY',
-            default     => 'JSS',
-        };
-    }
-
-    /**
-     * Map numeric grade to Nigerian display label
-     */
-    private function getNigerianGradeLabel(int $grade): string
-    {
-        return match($grade) {
-            1 => 'Primary 1',
-            2 => 'Primary 2',
-            3 => 'Primary 3',
-            4 => 'Primary 4',
-            5 => 'Primary 5',
-            6 => 'Primary 6',
-            7 => 'JSS 1',
-            8 => 'JSS 2',
-            9 => 'JSS 3',
-            default => "Grade {$grade}",
-        };
     }
 }
