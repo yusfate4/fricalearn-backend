@@ -34,7 +34,7 @@ class ExternalLessonController extends Controller
     }
 
     // =========================================================
-    // GET SINGLE LESSON — lazy-fetch Oak content on first open
+    // GET SINGLE LESSON — lazy fetch Oak content on first open
     // =========================================================
 
     public function show($id)
@@ -42,7 +42,6 @@ class ExternalLessonController extends Controller
         $lesson = ExternalLesson::with('topic.subject')->findOrFail($id);
         $user   = auth()->user();
 
-        // Lazy-load Oak content if video/quiz not yet fetched
         if ($this->needsOakContent($lesson)) {
             $lesson = $this->fetchAndStoreOakContent($lesson);
         }
@@ -60,9 +59,9 @@ class ExternalLessonController extends Controller
 
     private function needsOakContent(ExternalLesson $lesson): bool
     {
+        // Needs fetch if: has external_id, never been fetched (no description), is Oak content
         return !empty($lesson->external_id)
-            && empty($lesson->video_url)
-            && empty($lesson->quiz_data)
+            && empty($lesson->description)
             && $lesson->topic?->subject?->source === 'Oak National Academy';
     }
 
@@ -74,7 +73,7 @@ class ExternalLessonController extends Controller
         $updates = [];
 
         try {
-            // ── 1. Lesson summary (Mux video ID + key learning points) ──
+            // ── 1. Summary: lesson outcome, key points, keywords, Oak URL ──
             $summaryRes = Http::withHeaders([
                 'Authorization' => 'Bearer ' . $this->oakApiKey(),
                 'Accept'        => 'application/json',
@@ -83,22 +82,35 @@ class ExternalLessonController extends Controller
             if ($summaryRes->successful()) {
                 $summary = $summaryRes->json();
 
-                $muxId = $summary['videoMuxPlaybackId'] ?? null;
-                if ($muxId) {
-                    // ✅ Use Mux hosted player URL — works as a standard iframe src
-                    $updates['video_url'] = "https://player.mux.com/{$muxId}";
+                // Oak page URL for "Watch on Oak" link — stored in slide_url
+                if (!empty($summary['canonicalUrl'])) {
+                    $updates['slide_url'] = $summary['canonicalUrl'];
                 }
 
-                if (!empty($summary['keyLearningPoints'])) {
-                    $points = array_map(
-                        fn($p) => $p['keyLearningPoint'] ?? '',
-                        $summary['keyLearningPoints']
-                    );
-                    $updates['description'] = implode(' • ', array_filter($points));
+                // Build description: pupil outcome + key learning points
+                $descParts = [];
+
+                if (!empty($summary['pupilLessonOutcome'])) {
+                    $descParts[] = $summary['pupilLessonOutcome'];
                 }
+
+                foreach ($summary['keyLearningPoints'] ?? [] as $p) {
+                    if (!empty($p['keyLearningPoint'])) {
+                        $descParts[] = '• ' . $p['keyLearningPoint'];
+                    }
+                }
+
+                // Store keywords as JSON in worksheet_url field (reusing existing column)
+                if (!empty($summary['lessonKeywords'])) {
+                    $updates['worksheet_url'] = json_encode($summary['lessonKeywords']);
+                }
+
+                $updates['description'] = !empty($descParts)
+                    ? implode("\n", $descParts)
+                    : 'fetched'; // Mark as fetched even if no content
             }
 
-            // ── 2. Quiz data ────────────────────────────────────────
+            // ── 2. Quiz: only text-based questions (skip image-based) ──
             $quizRes = Http::withHeaders([
                 'Authorization' => 'Bearer ' . $this->oakApiKey(),
                 'Accept'        => 'application/json',
@@ -108,11 +120,15 @@ class ExternalLessonController extends Controller
                 $normalised = $this->normaliseOakQuiz($quizRes->json());
                 if (!empty($normalised)) {
                     $updates['quiz_data'] = json_encode($normalised);
+                    Log::info("Oak: Got " . count($normalised) . " text-based quiz questions for {$slug}");
+                } else {
+                    Log::info("Oak: No text-only quiz questions for {$slug} (all image-based)");
                 }
             }
 
         } catch (\Exception $e) {
             Log::error("Oak: Failed to fetch content for {$slug}: " . $e->getMessage());
+            $updates['description'] = 'fetched'; // prevent infinite retry
         }
 
         if (!empty($updates)) {
@@ -121,59 +137,77 @@ class ExternalLessonController extends Controller
                 ->update(array_merge($updates, ['updated_at' => now()]));
 
             $lesson = ExternalLesson::with('topic.subject')->find($lesson->id);
-            Log::info("Oak: Content stored for lesson {$lesson->id}");
         }
 
         return $lesson;
     }
 
     /**
-     * Normalise Oak quiz format → our format matching the viewer.
+     * Normalise Oak quiz format to our flat array format.
      *
-     * Oak: { starterQuiz: [{questionStem, answers, correctAnswer}], exitQuiz: [...] }
-     * Ours: [{ question, options, correct_answer, correct_index }]
-     *                       ^^^^^^^^^^^^^^
-     *                       matches viewer's question.correct_answer
+     * Oak format:
+     * {
+     *   "question": "Is this a clock?",
+     *   "questionType": "multiple-choice",
+     *   "questionImage": { "url": "...", ... },   ← SKIP if present
+     *   "answers": [
+     *     { "type": "text", "content": "Yes", "distractor": true },   ← wrong
+     *     { "type": "text", "content": "No",  "distractor": false },  ← correct
+     *   ]
+     * }
+     *
+     * Our format:
+     * [{ question, options, correct_answer, correct_index }]
      */
     private function normaliseOakQuiz(array $raw): array
     {
         $questions = [];
 
-        // Prefer exitQuiz, fall back to starterQuiz
+        // Try exitQuiz first, fall back to starterQuiz
         $source = !empty($raw['exitQuiz'])
             ? $raw['exitQuiz']
             : ($raw['starterQuiz'] ?? []);
 
         foreach ($source as $q) {
-            $questionText = $q['questionStem']['text'] ?? $q['question'] ?? null;
+            $questionText = $q['question'] ?? null;
             if (!$questionText) continue;
 
-            // Extract answer options as plain strings
-            $options = [];
+            // ── Skip image-based questions ──────────────────────────
+            // These require seeing an image to answer (e.g. "Which is the hour hand?")
+            if (!empty($q['questionImage'])) continue;
+
+            // ── Extract answers ─────────────────────────────────────
+            $options       = [];
+            $correctAnswer = null;
+
             foreach ($q['answers'] ?? [] as $answer) {
-                $text = $answer['answer']['text'] ?? $answer['text'] ?? null;
-                if ($text) $options[] = $text;
-            }
-            if (count($options) < 2) continue;
+                $content     = $answer['content'] ?? null;
+                $isDistractor = $answer['distractor'] ?? true; // true = wrong, false = correct
 
-            // Find correct answer
-            $correctText = $q['correctAnswer']['answer']['text']
-                ?? $q['correct_answer']
-                ?? null;
+                if (empty($content)) continue;
 
-            $correctIndex = 0;
-            if ($correctText) {
-                $idx = array_search($correctText, $options);
-                if ($idx !== false) $correctIndex = $idx;
+                // Skip single-letter answers like "a", "b", "c"
+                // These reference labelled parts of an image — meaningless without the image
+                if (strlen(trim($content)) === 1 && ctype_alpha($content)) continue;
+
+                $options[] = $content;
+
+                if ($isDistractor === false) {
+                    $correctAnswer = $content;
+                }
             }
+
+            if (count($options) < 2 || !$correctAnswer) continue;
+
+            // Ensure correct answer is in the options array
+            if (!in_array($correctAnswer, $options)) continue;
 
             $questions[] = [
-                'question'      => $questionText,
-                'options'       => $options,
-                // ✅ Use 'correct_answer' to match viewer's question.correct_answer
-                'correct_answer' => $options[$correctIndex] ?? null,
-                'correct_index'  => $correctIndex,
-                'explanation'    => null, // Oak doesn't provide explanations
+                'question'       => $questionText,
+                'options'        => $options,
+                'correct_answer' => $correctAnswer,
+                'correct_index'  => array_search($correctAnswer, $options),
+                'explanation'    => null,
             ];
         }
 
@@ -213,27 +247,21 @@ class ExternalLessonController extends Controller
         if (!$quizData) {
             return response()->json([
                 'success' => false,
-                'message' => 'No quiz available for this lesson yet.',
+                'message' => 'No quiz available for this lesson.',
             ], 422);
         }
 
         $answers = $request->answers ?? [];
 
-        // Detect format and score
-        // Our format (both Oak normalised + Nigerian): flat array [{ question, options, correct_answer }]
-        if (isset($quizData[0]['question'])) {
-            [$score, $correct, $total, $wrongIds] = $this->scoreQuiz($quizData, $answers);
-        }
-        // Legacy format: { questions: [...] }
-        elseif (isset($quizData['questions'])) {
-            [$score, $correct, $total, $wrongIds] = $this->scoreQuiz($quizData['questions'], $answers);
-        } else {
-            return response()->json(['success' => false, 'message' => 'Unknown quiz format.'], 422);
-        }
+        // Handle both flat array and legacy {questions:[]} wrapper
+        $questions = isset($quizData[0]['question'])
+            ? $quizData
+            : ($quizData['questions'] ?? []);
+
+        [$score, $correct, $total, $wrongIds] = $this->scoreQuiz($questions, $answers);
 
         $passed = $score >= 70;
 
-        // Save performance
         $subjectId = DB::table('external_topics')
             ->where('id', $lesson->topic_id)
             ->value('subject_id');
@@ -258,7 +286,6 @@ class ExternalLessonController extends Controller
             'updated_at'         => now(),
         ]);
 
-        // Update lesson progress
         UserExternalLessonProgress::updateOrCreate(
             ['user_id' => $student->id, 'lesson_id' => $lessonId],
             [
@@ -282,8 +309,8 @@ class ExternalLessonController extends Controller
     }
 
     /**
-     * Score quiz. Answers from viewer come as { "q1": "option text", "q2": "..." }
-     * Matches against correct_answer OR correct field.
+     * Score quiz. Viewer sends { "q1": "answer text", "q2": "..." }
+     * Correct answer is in correct_answer OR correct field.
      */
     private function scoreQuiz(array $questions, array $answers): array
     {
@@ -291,9 +318,7 @@ class ExternalLessonController extends Controller
         $wrongIds = [];
 
         foreach ($questions as $i => $q) {
-            // Viewer sends q1, q2, q3...
             $userAnswer    = $answers['q' . ($i + 1)] ?? null;
-            // Support both field names: correct_answer (Oak/new) and correct (old Nigerian)
             $correctAnswer = $q['correct_answer'] ?? $q['correct'] ?? null;
 
             if ($userAnswer !== null && $userAnswer === $correctAnswer) {
