@@ -104,7 +104,8 @@ class NigerianCurriculumSeeder extends Seeder
                 $lessonOrder++;
             }
 
-            $this->command->line("    ✓ {$topicData['title']} ({$lessonOrder - 1} lessons)");
+            $lessonCount = $lessonOrder - 1;
+            $this->command->line("    ✓ {$topicData['title']} ({$lessonCount} lessons)");
             $topicOrder++;
         }
     }
