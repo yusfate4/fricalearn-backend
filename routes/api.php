@@ -58,15 +58,15 @@ Route::prefix('auth')->group(function () {
 
 // OAK CURRICULUM (Subjects)
 Route::prefix('oak')->middleware('auth:sanctum')->group(function () {
-    Route::get('/test', [OakCurriculumController::class, 'testConnection']);
-    Route::get('/key-stages', [OakCurriculumController::class, 'getKeyStages']);
-    Route::get('/subjects', [OakCurriculumController::class, 'getSubjects']);
-    Route::get('/programmes', [OakCurriculumController::class, 'getProgrammes']);
-    Route::get('/units', [OakCurriculumController::class, 'getUnits']);
-    Route::get('/lessons', [OakCurriculumController::class, 'getLessons']);
-    Route::get('/lesson', [OakCurriculumController::class, 'getLesson']);
+    Route::get('/test',           [OakCurriculumController::class, 'testConnection']);
+    Route::get('/key-stages',     [OakCurriculumController::class, 'getKeyStages']);
+    Route::get('/subjects',       [OakCurriculumController::class, 'getSubjects']);
+    Route::get('/units',          [OakCurriculumController::class, 'getUnits']);
+    Route::get('/lessons',        [OakCurriculumController::class, 'getLessons']);
+    Route::get('/lesson-detail',  [OakCurriculumController::class, 'getLessonDetail']);
+    Route::get('/lesson-quiz',    [OakCurriculumController::class, 'getLessonQuiz']);
+    Route::get('/search',         [OakCurriculumController::class, 'searchLessons']);
 });
-
 // Curriculum routes
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/my-curriculum', function (Request $request) {
