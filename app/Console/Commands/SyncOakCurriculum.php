@@ -80,7 +80,6 @@ class SyncOakCurriculum extends Command
 
         foreach ($unitsData as $yearGroup) {
             $yearTitle = $yearGroup['yearTitle'] ?? 'Unknown Year';
-
             $this->line("  {$yearTitle}");
 
             foreach ($yearGroup['units'] ?? [] as $unit) {
@@ -91,24 +90,25 @@ class SyncOakCurriculum extends Command
                 $topicCount++;
 
                 if (!$isDryRun) {
-                    // Use title+subject_id as unique key (no slug column in table)
+                    // Correct columns: subject_id, order_index
                     DB::table('external_topics')->updateOrInsert(
                         [
-                            'title'               => $unitTitle,
-                            'external_subject_id' => $externalSubject->id,
+                            'title'      => $unitTitle,
+                            'subject_id' => $externalSubject->id,   // ✅ correct column
                         ],
                         [
-                            'title'               => $unitTitle,
-                            'external_subject_id' => $externalSubject->id,
-                            'order'               => $topicCount,
-                            'updated_at'          => now(),
-                            'created_at'          => now(),
+                            'title'       => $unitTitle,
+                            'subject_id'  => $externalSubject->id,  // ✅ correct column
+                            'order_index' => $topicCount,           // ✅ correct column
+                            'external_id' => $unitSlug,             // store Oak slug here
+                            'updated_at'  => now(),
+                            'created_at'  => now(),
                         ]
                     );
 
                     $topic = DB::table('external_topics')
                         ->where('title', $unitTitle)
-                        ->where('external_subject_id', $externalSubject->id)
+                        ->where('subject_id', $externalSubject->id) // ✅ correct column
                         ->first();
                 }
 
@@ -141,15 +141,16 @@ class SyncOakCurriculum extends Command
                         if (!$isDryRun && isset($topic)) {
                             DB::table('external_lessons')->updateOrInsert(
                                 [
-                                    'title'             => $lessonTitle,
-                                    'external_topic_id' => $topic->id,
+                                    'title'    => $lessonTitle,
+                                    'topic_id' => $topic->id,       // ✅ correct column
                                 ],
                                 [
-                                    'title'             => $lessonTitle,
-                                    'external_topic_id' => $topic->id,
-                                    'order'             => $lessonOrder,
-                                    'updated_at'        => now(),
-                                    'created_at'        => now(),
+                                    'title'       => $lessonTitle,
+                                    'topic_id'    => $topic->id,    // ✅ correct column
+                                    'order_index' => $lessonOrder,  // ✅ correct column
+                                    'external_id' => $lessonSlug,   // store Oak slug here
+                                    'updated_at'  => now(),
+                                    'created_at'  => now(),
                                 ]
                             );
                         }
@@ -158,8 +159,6 @@ class SyncOakCurriculum extends Command
                         $lessonCount++;
                     }
                 }
-
-                $this->line("      ({$lessonCount} lessons so far)");
             }
         }
 
