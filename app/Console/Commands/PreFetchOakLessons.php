@@ -112,10 +112,13 @@ class PreFetchOakLessons extends Command
                             $content     = $answer['content'] ?? null;
                             $isDistractor = $answer['distractor'] ?? true;
 
-                            if (empty($content)) continue;
+                           if (empty($content)) continue;
 
-                            // Skip single-letter options like "a","b","c" = image labels
-                            if (strlen(trim($content)) === 1 && ctype_alpha($content)) continue;
+// Skip non-string content (some Oak questions use arrays for order/match types)
+if (!is_string($content)) continue;
+
+// Skip single-letter options like "a","b","c" = image labels
+if (strlen(trim($content)) === 1 && ctype_alpha($content)) continue;
 
                             $options[] = $content;
 
