@@ -26,7 +26,7 @@ class ScheduleUpdated extends Notification
     {
         return (new MailMessage)
             ->subject('🗓️ Save the Date: New Class Schedule for FricaLearn')
-            ->greeting('Ẹ n lẹ́, Parent!')
+            ->greeting('Hello, Parent!')
             ->line('We are updating our global master schedule to better serve our students.')
             ->line('**The new weekly class time is now fixed for:**')
             ->line('🚀 ' . $this->scheduleDetails)

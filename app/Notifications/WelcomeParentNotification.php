@@ -36,7 +36,7 @@ class WelcomeParentNotification extends Notification
 {
     return (new \Illuminate\Notifications\Messages\MailMessage)
         ->subject('Welcome to FricaLearn!')
-        ->greeting('Ẹ káàbọ̀, ' . $notifiable->name . '!')
+        ->greeting('Welcome, ' . $notifiable->name . '!')
         ->line('We are thrilled to have you join the FricaLearn Diaspora Academy.')
         ->line('Your account has been set up successfully. You can now log in to add, monitor your child’s progress, manage their lessons, and join our vibrant community.')
         ->action('Go to Parent Portal', url('/parent/dashboard'))

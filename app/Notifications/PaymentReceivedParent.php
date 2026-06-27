@@ -27,7 +27,7 @@ class PaymentReceivedParent extends Notification
     {
         return (new MailMessage)
             ->subject('We’ve Received Your Payment Proof! 🚀')
-            ->greeting('Ẹ n lẹ́, ' . $notifiable->name . '!')
+            ->greeting('Hello, ' . $notifiable->name . '!')
             ->line('Thank you for submitting the payment proof for **' . $this->payment->child_name . '**.')
             ->line('Our team is currently verifying the receipt. This usually takes less than 24 hours.')
             ->line('**Summary of Submission:**')

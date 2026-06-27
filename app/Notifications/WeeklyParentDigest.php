@@ -29,7 +29,7 @@ class WeeklyParentDigest extends Notification
     {
         $mail = (new MailMessage)
             ->subject('📊 Your Weekly FricaLearn Academy Digest')
-            ->greeting('Ẹ n lẹ́, Parent!')
+            ->greeting('Hello, Parent!')
             ->line('It has been an exciting week of learning at the academy! Here is a summary of your children\'s progress and cultural milestones.');
 
         // Loop through each child's data to build the email body
