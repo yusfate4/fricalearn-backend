@@ -8,13 +8,13 @@ use Illuminate\Support\Facades\Http;
 class PreFetchOakLessons extends Command
 {
     protected $signature   = 'oak:prefetch {--limit=50} {--subject=39}';
-    protected $description = 'Pre-fetch Oak content (summary + transcript + quiz) for all lessons';
+    protected $description = 'Fetch Oak lesson content (transcript + metadata + quiz) — no video links';
 
     public function handle(): int
     {
-        $apiUrl   = rtrim(config('services.oak.api_url'), '/');
-        $apiKey   = config('services.oak.api_key');
-        $limit    = (int) $this->option('limit');
+        $apiUrl    = rtrim(config('services.oak.api_url'), '/');
+        $apiKey    = config('services.oak.api_key');
+        $limit     = (int) $this->option('limit');
         $subjectId = (int) $this->option('subject');
 
         $lessons = DB::table('external_lessons as l')
@@ -23,17 +23,17 @@ class PreFetchOakLessons extends Command
             ->where('s.source', 'Oak National Academy')
             ->where('t.subject_id', $subjectId)
             ->whereNotNull('l.external_id')
-            ->whereNull('l.description')   // only not-yet-fetched
+            ->whereNull('l.description')
             ->select('l.id', 'l.external_id', 'l.title')
             ->limit($limit)
             ->get();
 
-        $this->info("Found {$lessons->count()} lessons to fetch (subject #{$subjectId}, limit: {$limit})");
+        $this->info("Found {$lessons->count()} lessons (subject #{$subjectId}, limit: {$limit})");
         $this->newLine();
 
-        $fetched   = 0;
-        $hasQuiz   = 0;
-        $hasOakUrl = 0;
+        $fetched       = 0;
+        $hasTranscript = 0;
+        $hasQuiz       = 0;
 
         foreach ($lessons as $lesson) {
             $slug    = $lesson->external_id;
@@ -42,67 +42,92 @@ class PreFetchOakLessons extends Command
             $this->line("Fetching: {$lesson->title}");
 
             try {
-                // ── 1. SUMMARY ─────────────────────────────────────
+                // ── 1. SUMMARY: outcome, key points, keywords, misconceptions ──
                 $summaryRes = Http::withHeaders([
                     'Authorization' => "Bearer {$apiKey}",
                     'Accept'        => 'application/json',
-                ])->timeout(15)->get("{$apiUrl}/lessons/{$slug}/summary");
+                ])->timeout(20)->get("{$apiUrl}/lessons/{$slug}/summary");
+
+                $metadata = [
+                    'outcome'        => null,
+                    'key_points'     => [],
+                    'keywords'       => [],
+                    'misconceptions' => [],
+                ];
 
                 if ($summaryRes->successful()) {
                     $summary = $summaryRes->json();
 
-                    // Oak page link (stored in slide_url)
-                    if (!empty($summary['canonicalUrl'])) {
-                        $updates['slide_url'] = $summary['canonicalUrl'];
-                        $hasOakUrl++;
-                    }
+                    $metadata['outcome'] = $summary['pupilLessonOutcome'] ?? null;
 
-                    // Keywords (stored as JSON in worksheet_url)
-                    if (!empty($summary['lessonKeywords'])) {
-                        $updates['worksheet_url'] = json_encode($summary['lessonKeywords']);
-                    }
+                    $metadata['key_points'] = array_values(array_filter(
+                        array_map(
+                            fn($p) => $p['keyLearningPoint'] ?? null,
+                            $summary['keyLearningPoints'] ?? []
+                        )
+                    ));
 
-                    // Description = pupilLessonOutcome + keyLearningPoints
-                    $descParts = [];
-                    if (!empty($summary['pupilLessonOutcome'])) {
-                        $descParts[] = $summary['pupilLessonOutcome'];
-                    }
-                    foreach ($summary['keyLearningPoints'] ?? [] as $p) {
-                        $kp = $p['keyLearningPoint'] ?? '';
-                        if ($kp) $descParts[] = '• ' . $kp;
-                    }
-                    $updates['description'] = !empty($descParts)
-                        ? implode("\n", $descParts)
-                        : 'fetched';
-                } else {
-                    $updates['description'] = 'fetched'; // mark as attempted
+                    $metadata['keywords'] = array_map(
+                        fn($kw) => [
+                            'keyword'     => $kw['keyword']     ?? '',
+                            'description' => $kw['description'] ?? '',
+                        ],
+                        $summary['lessonKeywords'] ?? []
+                    );
+
+                    $metadata['misconceptions'] = array_map(
+                        fn($m) => [
+                            'misconception' => $m['misconception'] ?? '',
+                            'response'      => $m['response']      ?? '',
+                        ],
+                        $summary['misconceptionsAndCommonMistakes'] ?? []
+                    );
                 }
 
-                // ── 2. QUIZ ─────────────────────────────────────────
-                // Actual Oak quiz format (confirmed from API):
-                // { starterQuiz: [{question, questionType, questionImage?, answers:[{type,content,distractor}]}], exitQuiz: [...] }
-                // distractor: false = CORRECT answer
-                // distractor: true  = wrong answer
+                // Store all metadata as JSON in worksheet_url (TEXT column)
+                $updates['worksheet_url'] = json_encode($metadata);
+
+                // ── 2. TRANSCRIPT: the full lesson text ────────────────────────
+                $transcriptRes = Http::withHeaders([
+                    'Authorization' => "Bearer {$apiKey}",
+                    'Accept'        => 'application/json',
+                ])->timeout(20)->get("{$apiUrl}/lessons/{$slug}/transcript");
+
+                if ($transcriptRes->successful()) {
+                    $transcriptData = $transcriptRes->json();
+                    $transcript     = $transcriptData['transcript'] ?? null;
+
+                    if ($transcript && strlen(trim($transcript)) > 30) {
+                        // Store up to 10,000 chars of transcript
+                        $updates['description'] = substr(trim($transcript), 0, 10000);
+                        $hasTranscript++;
+                        $this->line("  📄 Transcript: " . strlen($updates['description']) . " chars");
+                    } else {
+                        // No transcript — use outcome as fallback marker
+                        $updates['description'] = $metadata['outcome'] ?? 'fetched';
+                    }
+                } else {
+                    $updates['description'] = $metadata['outcome'] ?? 'fetched';
+                }
+
+                // ── 3. QUIZ: text-only questions ───────────────────────────────
                 $quizRes = Http::withHeaders([
                     'Authorization' => "Bearer {$apiKey}",
                     'Accept'        => 'application/json',
-                ])->timeout(15)->get("{$apiUrl}/lessons/{$slug}/quiz");
+                ])->timeout(20)->get("{$apiUrl}/lessons/{$slug}/quiz");
 
                 if ($quizRes->successful()) {
-                    $raw = $quizRes->json();
-
-                    // Prefer exitQuiz, fall back to starterQuiz
+                    $raw    = $quizRes->json();
                     $source = !empty($raw['exitQuiz'])
                         ? $raw['exitQuiz']
                         : ($raw['starterQuiz'] ?? []);
 
                     $questions = [];
-
                     foreach ($source as $q) {
                         $questionText = $q['question'] ?? null;
                         if (!$questionText) continue;
 
-                        // Skip image-based questions (require seeing a picture to answer)
+                        // Skip image-based questions
                         if (!empty($q['questionImage'])) continue;
 
                         $options       = [];
@@ -112,19 +137,12 @@ class PreFetchOakLessons extends Command
                             $content     = $answer['content'] ?? null;
                             $isDistractor = $answer['distractor'] ?? true;
 
-                           if (empty($content)) continue;
-
-// Skip non-string content (some Oak questions use arrays for order/match types)
-if (!is_string($content)) continue;
-
-// Skip single-letter options like "a","b","c" = image labels
-if (strlen(trim($content)) === 1 && ctype_alpha($content)) continue;
+                            if (empty($content) || !is_string($content)) continue;
+                            // Skip single-letter image labels
+                            if (strlen(trim($content)) === 1 && ctype_alpha($content)) continue;
 
                             $options[] = $content;
-
-                            if ($isDistractor === false) {
-                                $correctAnswer = $content;
-                            }
+                            if ($isDistractor === false) $correctAnswer = $content;
                         }
 
                         if (count($options) < 2 || !$correctAnswer) continue;
@@ -142,35 +160,17 @@ if (strlen(trim($content)) === 1 && ctype_alpha($content)) continue;
                     if (!empty($questions)) {
                         $updates['quiz_data'] = json_encode($questions);
                         $hasQuiz++;
-                        $this->line("  ✅ " . count($questions) . " quiz questions");
+                        $this->line("  📝 Quiz: " . count($questions) . " questions");
                     }
                 }
 
-                // ── 3. TRANSCRIPT (as backup readable content) ─────
-                // Only fetch if description is still empty after summary
-                if (($updates['description'] ?? 'fetched') === 'fetched') {
-                    $transcriptRes = Http::withHeaders([
-                        'Authorization' => "Bearer {$apiKey}",
-                        'Accept'        => 'application/json',
-                    ])->timeout(15)->get("{$apiUrl}/lessons/{$slug}/transcript");
-
-                    if ($transcriptRes->successful()) {
-                        $transcriptData = $transcriptRes->json();
-                        $transcript     = $transcriptData['transcript'] ?? null;
-
-                        if ($transcript) {
-                            // Store first 600 chars as lesson overview
-                            $excerpt = substr(strip_tags($transcript), 0, 600);
-                            if (strlen($transcript) > 600) $excerpt .= '...';
-                            $updates['description'] = $excerpt;
-                            $this->line("  📄 Transcript stored as content");
-                        }
-                    }
-                }
+                // Ensure no Oak video/page links stored
+                $updates['video_url'] = null;
+                $updates['slide_url'] = null;
 
             } catch (\Exception $e) {
-                $this->warn("  Error: " . $e->getMessage());
-                $updates['description'] = $updates['description'] ?? 'fetched';
+                $this->warn("  ❌ Error: " . $e->getMessage());
+                $updates['description'] = 'fetched';
             }
 
             DB::table('external_lessons')
@@ -178,11 +178,11 @@ if (strlen(trim($content)) === 1 && ctype_alpha($content)) continue;
                 ->update(array_merge($updates, ['updated_at' => now()]));
 
             $fetched++;
-            usleep(300000); // 0.3s between requests — stay within 1000/hr limit
+            usleep(350000); // 0.35s between requests
         }
 
         $this->newLine();
-        $this->info("Done! Fetched: {$fetched} | Has quiz: {$hasQuiz} | Has Oak link: {$hasOakUrl}");
+        $this->info("Done! Fetched: {$fetched} | Has transcript: {$hasTranscript} | Has quiz: {$hasQuiz}");
         return self::SUCCESS;
     }
 }

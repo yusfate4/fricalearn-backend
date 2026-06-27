@@ -13,15 +13,8 @@ use Illuminate\Support\Facades\Log;
 
 class ExternalLessonController extends Controller
 {
-    private function oakApiUrl(): string
-    {
-        return rtrim(config('services.oak.api_url'), '/');
-    }
-
-    private function oakApiKey(): string
-    {
-        return config('services.oak.api_key');
-    }
+    private function oakApiUrl(): string { return rtrim(config('services.oak.api_url'), '/'); }
+    private function oakApiKey(): string { return config('services.oak.api_key'); }
 
     // =========================================================
     // GET ALL LESSONS FOR A TOPIC
@@ -34,7 +27,7 @@ class ExternalLessonController extends Controller
     }
 
     // =========================================================
-    // GET SINGLE LESSON — lazy fetch Oak content on first open
+    // GET SINGLE LESSON — lazy fetch if not yet populated
     // =========================================================
 
     public function show($id)
@@ -59,7 +52,6 @@ class ExternalLessonController extends Controller
 
     private function needsOakContent(ExternalLesson $lesson): bool
     {
-        // Needs fetch if: has external_id, never been fetched (no description), is Oak content
         return !empty($lesson->external_id)
             && empty($lesson->description)
             && $lesson->topic?->subject?->source === 'Oak National Academy';
@@ -67,140 +59,88 @@ class ExternalLessonController extends Controller
 
     private function fetchAndStoreOakContent(ExternalLesson $lesson): ExternalLesson
     {
-        $slug = $lesson->external_id;
-        Log::info("Oak: Fetching content for: {$slug}");
-
+        $slug    = $lesson->external_id;
+        $apiUrl  = $this->oakApiUrl();
+        $apiKey  = $this->oakApiKey();
         $updates = [];
 
+        Log::info("Oak lazy fetch: {$slug}");
+
         try {
-            // ── 1. Summary: lesson outcome, key points, keywords, Oak URL ──
+            // ── Summary ───────────────────────────────────────
             $summaryRes = Http::withHeaders([
-                'Authorization' => 'Bearer ' . $this->oakApiKey(),
-                'Accept'        => 'application/json',
-            ])->timeout(20)->get($this->oakApiUrl() . "/lessons/{$slug}/summary");
+                'Authorization' => "Bearer {$apiKey}", 'Accept' => 'application/json',
+            ])->timeout(20)->get("{$apiUrl}/lessons/{$slug}/summary");
+
+            $metadata = ['outcome' => null, 'key_points' => [], 'keywords' => [], 'misconceptions' => []];
 
             if ($summaryRes->successful()) {
-                $summary = $summaryRes->json();
-
-                // Oak page URL for "Watch on Oak" link — stored in slide_url
-                if (!empty($summary['canonicalUrl'])) {
-                    $updates['slide_url'] = $summary['canonicalUrl'];
-                }
-
-                // Build description: pupil outcome + key learning points
-                $descParts = [];
-
-                if (!empty($summary['pupilLessonOutcome'])) {
-                    $descParts[] = $summary['pupilLessonOutcome'];
-                }
-
-                foreach ($summary['keyLearningPoints'] ?? [] as $p) {
-                    if (!empty($p['keyLearningPoint'])) {
-                        $descParts[] = '• ' . $p['keyLearningPoint'];
-                    }
-                }
-
-                // Store keywords as JSON in worksheet_url field (reusing existing column)
-                if (!empty($summary['lessonKeywords'])) {
-                    $updates['worksheet_url'] = json_encode($summary['lessonKeywords']);
-                }
-
-                $updates['description'] = !empty($descParts)
-                    ? implode("\n", $descParts)
-                    : 'fetched'; // Mark as fetched even if no content
+                $s = $summaryRes->json();
+                $metadata['outcome']        = $s['pupilLessonOutcome'] ?? null;
+                $metadata['key_points']     = array_values(array_filter(array_map(fn($p) => $p['keyLearningPoint'] ?? null, $s['keyLearningPoints'] ?? [])));
+                $metadata['keywords']       = array_map(fn($kw) => ['keyword' => $kw['keyword'] ?? '', 'description' => $kw['description'] ?? ''], $s['lessonKeywords'] ?? []);
+                $metadata['misconceptions'] = array_map(fn($m) => ['misconception' => $m['misconception'] ?? '', 'response' => $m['response'] ?? ''], $s['misconceptionsAndCommonMistakes'] ?? []);
             }
 
-            // ── 2. Quiz: only text-based questions (skip image-based) ──
+            $updates['worksheet_url'] = json_encode($metadata);
+
+            // ── Transcript ────────────────────────────────────
+            $transcriptRes = Http::withHeaders([
+                'Authorization' => "Bearer {$apiKey}", 'Accept' => 'application/json',
+            ])->timeout(20)->get("{$apiUrl}/lessons/{$slug}/transcript");
+
+            if ($transcriptRes->successful()) {
+                $t = ($transcriptRes->json())['transcript'] ?? null;
+                $updates['description'] = ($t && strlen(trim($t)) > 30)
+                    ? substr(trim($t), 0, 10000)
+                    : ($metadata['outcome'] ?? 'fetched');
+            } else {
+                $updates['description'] = $metadata['outcome'] ?? 'fetched';
+            }
+
+            // ── Quiz ──────────────────────────────────────────
             $quizRes = Http::withHeaders([
-                'Authorization' => 'Bearer ' . $this->oakApiKey(),
-                'Accept'        => 'application/json',
-            ])->timeout(20)->get($this->oakApiUrl() . "/lessons/{$slug}/quiz");
+                'Authorization' => "Bearer {$apiKey}", 'Accept' => 'application/json',
+            ])->timeout(20)->get("{$apiUrl}/lessons/{$slug}/quiz");
 
             if ($quizRes->successful()) {
-                $normalised = $this->normaliseOakQuiz($quizRes->json());
-                if (!empty($normalised)) {
-                    $updates['quiz_data'] = json_encode($normalised);
-                    Log::info("Oak: Got " . count($normalised) . " text-based quiz questions for {$slug}");
-                } else {
-                    Log::info("Oak: No text-only quiz questions for {$slug} (all image-based)");
-                }
+                $questions = $this->normaliseOakQuiz($quizRes->json());
+                if (!empty($questions)) $updates['quiz_data'] = json_encode($questions);
             }
 
+            // No video or external links
+            $updates['video_url'] = null;
+            $updates['slide_url'] = null;
+
         } catch (\Exception $e) {
-            Log::error("Oak: Failed to fetch content for {$slug}: " . $e->getMessage());
-            $updates['description'] = 'fetched'; // prevent infinite retry
+            Log::error("Oak fetch error for {$slug}: " . $e->getMessage());
+            $updates['description'] = 'fetched';
         }
 
-        if (!empty($updates)) {
-            DB::table('external_lessons')
-                ->where('id', $lesson->id)
-                ->update(array_merge($updates, ['updated_at' => now()]));
-
-            $lesson = ExternalLesson::with('topic.subject')->find($lesson->id);
-        }
-
-        return $lesson;
+        DB::table('external_lessons')->where('id', $lesson->id)->update(array_merge($updates, ['updated_at' => now()]));
+        return ExternalLesson::with('topic.subject')->find($lesson->id);
     }
 
-    /**
-     * Normalise Oak quiz format to our flat array format.
-     *
-     * Oak format:
-     * {
-     *   "question": "Is this a clock?",
-     *   "questionType": "multiple-choice",
-     *   "questionImage": { "url": "...", ... },   ← SKIP if present
-     *   "answers": [
-     *     { "type": "text", "content": "Yes", "distractor": true },   ← wrong
-     *     { "type": "text", "content": "No",  "distractor": false },  ← correct
-     *   ]
-     * }
-     *
-     * Our format:
-     * [{ question, options, correct_answer, correct_index }]
-     */
     private function normaliseOakQuiz(array $raw): array
     {
         $questions = [];
-
-        // Try exitQuiz first, fall back to starterQuiz
-        $source = !empty($raw['exitQuiz'])
-            ? $raw['exitQuiz']
-            : ($raw['starterQuiz'] ?? []);
+        $source    = !empty($raw['exitQuiz']) ? $raw['exitQuiz'] : ($raw['starterQuiz'] ?? []);
 
         foreach ($source as $q) {
             $questionText = $q['question'] ?? null;
-            if (!$questionText) continue;
+            if (!$questionText || !empty($q['questionImage'])) continue;
 
-            // ── Skip image-based questions ──────────────────────────
-            // These require seeing an image to answer (e.g. "Which is the hour hand?")
-            if (!empty($q['questionImage'])) continue;
-
-            // ── Extract answers ─────────────────────────────────────
-            $options       = [];
-            $correctAnswer = null;
+            $options = []; $correctAnswer = null;
 
             foreach ($q['answers'] ?? [] as $answer) {
-                $content     = $answer['content'] ?? null;
-                $isDistractor = $answer['distractor'] ?? true; // true = wrong, false = correct
-
-                if (empty($content)) continue;
-
-                // Skip single-letter answers like "a", "b", "c"
-                // These reference labelled parts of an image — meaningless without the image
+                $content = $answer['content'] ?? null;
+                if (empty($content) || !is_string($content)) continue;
                 if (strlen(trim($content)) === 1 && ctype_alpha($content)) continue;
-
                 $options[] = $content;
-
-                if ($isDistractor === false) {
-                    $correctAnswer = $content;
-                }
+                if (($answer['distractor'] ?? true) === false) $correctAnswer = $content;
             }
 
-            if (count($options) < 2 || !$correctAnswer) continue;
-
-            // Ensure correct answer is in the options array
-            if (!in_array($correctAnswer, $options)) continue;
+            if (count($options) < 2 || !$correctAnswer || !in_array($correctAnswer, $options)) continue;
 
             $questions[] = [
                 'question'       => $questionText,
@@ -221,7 +161,6 @@ class ExternalLessonController extends Controller
     public function updateProgress(Request $request, $id)
     {
         $user = auth()->user();
-
         $progress = UserExternalLessonProgress::updateOrCreate(
             ['user_id' => $user->id, 'lesson_id' => $id],
             [
@@ -230,7 +169,6 @@ class ExternalLessonController extends Controller
                 'started_at'    => $request->status === 'in_progress' ? now() : null,
             ]
         );
-
         return response()->json(['success' => true, 'progress' => $progress]);
     }
 
@@ -245,26 +183,25 @@ class ExternalLessonController extends Controller
         $quizData = json_decode($lesson->quiz_data, true);
 
         if (!$quizData) {
-            return response()->json([
-                'success' => false,
-                'message' => 'No quiz available for this lesson.',
-            ], 422);
+            return response()->json(['success' => false, 'message' => 'No quiz available.'], 422);
         }
 
-        $answers = $request->answers ?? [];
+        $questions = isset($quizData[0]['question']) ? $quizData : ($quizData['questions'] ?? []);
+        $answers   = $request->answers ?? [];
 
-        // Handle both flat array and legacy {questions:[]} wrapper
-        $questions = isset($quizData[0]['question'])
-            ? $quizData
-            : ($quizData['questions'] ?? []);
+        $correct  = 0; $wrongIds = [];
+        foreach ($questions as $i => $q) {
+            $userAns   = $answers['q' . ($i + 1)] ?? null;
+            $rightAns  = $q['correct_answer'] ?? $q['correct'] ?? null;
+            if ($userAns && $userAns === $rightAns) { $correct++; }
+            else { $wrongIds[] = $i + 1; }
+        }
 
-        [$score, $correct, $total, $wrongIds] = $this->scoreQuiz($questions, $answers);
-
+        $total  = count($questions);
+        $score  = $total > 0 ? round(($correct / $total) * 100) : 0;
         $passed = $score >= 70;
 
-        $subjectId = DB::table('external_topics')
-            ->where('id', $lesson->topic_id)
-            ->value('subject_id');
+        $subjectId = DB::table('external_topics')->where('id', $lesson->topic_id)->value('subject_id');
 
         DB::table('quiz_performance')->insert([
             'student_id'         => $student->id,
@@ -278,59 +215,21 @@ class ExternalLessonController extends Controller
             'wrong_question_ids' => json_encode($wrongIds),
             'passed'             => $passed,
             'completed_at'       => now(),
-            'attempt_number'     => DB::table('quiz_performance')
-                ->where('student_id', $student->id)
-                ->where('lesson_id', $lessonId)
-                ->count() + 1,
+            'attempt_number'     => DB::table('quiz_performance')->where('student_id', $student->id)->where('lesson_id', $lessonId)->count() + 1,
             'created_at'         => now(),
             'updated_at'         => now(),
         ]);
 
         UserExternalLessonProgress::updateOrCreate(
             ['user_id' => $student->id, 'lesson_id' => $lessonId],
-            [
-                'status'        => $passed ? 'completed' : 'in_progress',
-                'quiz_score'    => $score,
-                'video_watched' => true,
-                'completed_at'  => $passed ? now() : null,
-            ]
+            ['status' => $passed ? 'completed' : 'in_progress', 'quiz_score' => $score, 'completed_at' => $passed ? now() : null]
         );
 
         return response()->json([
-            'success'         => true,
-            'score'           => $score,
-            'correct_answers' => $correct,
-            'total_questions' => $total,
-            'passed'          => $passed,
-            'message'         => $passed
-                ? '🎉 Great job! Well done!'
-                : '📚 Keep practicing — you can do it!',
+            'success' => true, 'score' => $score,
+            'correct_answers' => $correct, 'total_questions' => $total,
+            'passed' => $passed,
+            'message' => $passed ? '🎉 Great job!' : '📚 Keep practicing!',
         ]);
-    }
-
-    /**
-     * Score quiz. Viewer sends { "q1": "answer text", "q2": "..." }
-     * Correct answer is in correct_answer OR correct field.
-     */
-    private function scoreQuiz(array $questions, array $answers): array
-    {
-        $correct  = 0;
-        $wrongIds = [];
-
-        foreach ($questions as $i => $q) {
-            $userAnswer    = $answers['q' . ($i + 1)] ?? null;
-            $correctAnswer = $q['correct_answer'] ?? $q['correct'] ?? null;
-
-            if ($userAnswer !== null && $userAnswer === $correctAnswer) {
-                $correct++;
-            } else {
-                $wrongIds[] = $i + 1;
-            }
-        }
-
-        $total = count($questions);
-        $score = $total > 0 ? round(($correct / $total) * 100) : 0;
-
-        return [$score, $correct, $total, $wrongIds];
     }
 }
