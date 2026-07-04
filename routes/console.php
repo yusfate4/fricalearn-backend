@@ -29,3 +29,9 @@ Schedule::call(function () {
         $reportController->emailMonthlyReport($student->id);
     }
 })->monthlyOn(1, '08:00'); // Runs on the 1st of every month at 8:00 AM
+
+// 🧠 AI CONTENT — fills lessons Oak has no transcript for
+Schedule::command('oak:generate-content --limit=10')->everyTenMinutes();
+
+// 📝 AI QUIZZES — for lessons with content but no quiz
+Schedule::command('oak:generate-quizzes --limit=10')->everyTenMinutes();
