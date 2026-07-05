@@ -225,10 +225,22 @@ class ExternalLessonController extends Controller
             ['status' => $passed ? 'completed' : 'in_progress', 'quiz_score' => $score, 'completed_at' => $passed ? now() : null]
         );
 
+        // 🏆 Topic evaluation — fires when the last quiz-lesson in the topic is completed
+        $topicEvaluation = null;
+        if ($passed) {
+            try {
+                $topicEvaluation = app(\App\Services\TopicEvaluationService::class)
+                    ->evaluateIfTopicComplete($student->id, (int) $lesson->topic_id);
+            } catch (\Exception $e) {
+                Log::error('Topic evaluation failed: ' . $e->getMessage());
+            }
+        }
+
         return response()->json([
             'success' => true, 'score' => $score,
             'correct_answers' => $correct, 'total_questions' => $total,
             'passed' => $passed,
+            'topic_evaluation' => $topicEvaluation,
             'message' => $passed ? '🎉 Great job!' : '📚 Keep practicing!',
         ]);
     }
