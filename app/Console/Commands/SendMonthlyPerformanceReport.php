@@ -9,13 +9,14 @@ use Illuminate\Support\Facades\Log;
 
 class SendMonthlyPerformanceReport extends Command
 {
-    protected $signature   = 'reports:monthly-performance';
+    protected $signature   = 'reports:monthly-performance {--current : Report on the current month instead of last month (for testing)}';
     protected $description = 'Email each parent a monthly overview of their child\'s quiz & lesson performance';
 
     public function handle(): int
     {
-        $monthStart = now()->subMonth()->startOfMonth();
-        $monthEnd   = now()->subMonth()->endOfMonth();
+        $base       = $this->option('current') ? now() : now()->subMonth();
+        $monthStart = $base->copy()->startOfMonth();
+        $monthEnd   = $base->copy()->endOfMonth();
         $monthName  = $monthStart->format('F Y');
 
         $pairs = DB::table('parent_child as pc')
