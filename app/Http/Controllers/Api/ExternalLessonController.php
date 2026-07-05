@@ -30,10 +30,41 @@ class ExternalLessonController extends Controller
     // GET SINGLE LESSON — lazy fetch if not yet populated
     // =========================================================
 
+    /**
+     * 🔒 Freemium gate: Maths/English lessons require an active
+     * 14-day trial or premium. Returns null if allowed, or a 402 response.
+     */
+    private function premiumGate($studentId)
+    {
+        $student = \App\Models\User::find($studentId);
+        if (!$student) return null;
+
+        $isPremium = (bool) $student->is_premium
+            && (!$student->premium_expires_at || now()->lt($student->premium_expires_at));
+        if ($isPremium) return null;
+
+        $onTrial = $student->trial_ends_at && now()->lt($student->trial_ends_at);
+        if ($onTrial) return null;
+
+        // Legacy accounts with no trial date set: allow (grandfathered)
+        if (!$student->trial_ends_at) return null;
+
+        return response()->json([
+            'success'       => false,
+            'access'        => 'expired',
+            'trial_expired' => true,
+            'message'       => 'Your free trial has ended. Upgrade to continue learning Maths and English!',
+        ], 402);
+    }
+
     public function show($id)
     {
         $lesson = ExternalLesson::with('topic.subject')->findOrFail($id);
         $user   = auth()->user();
+
+        // 🔒 Trial/premium gate (effective student = student_id param for parents)
+        $effectiveStudentId = request('student_id') ?: $user->id;
+        if ($gate = $this->premiumGate($effectiveStudentId)) return $gate;
 
         if ($this->needsOakContent($lesson)) {
             $lesson = $this->fetchAndStoreOakContent($lesson);
@@ -179,6 +210,11 @@ class ExternalLessonController extends Controller
     public function submitQuiz(Request $request, $lessonId)
     {
         $student  = auth()->user();
+
+        // 🔒 Trial/premium gate
+        $effectiveStudentId = $request->input('student_id') ?: $student->id;
+        if ($gate = $this->premiumGate($effectiveStudentId)) return $gate;
+
         $lesson   = DB::table('external_lessons')->find($lessonId);
         $quizData = json_decode($lesson->quiz_data, true);
 

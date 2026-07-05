@@ -263,3 +263,10 @@ Route::prefix('external')->middleware('auth:sanctum')->group(function () {
 
 });
 });
+// ─────────────────────────────────────────────────────────────
+// 🆓 FREEMIUM TRIAL — status check + premium upgrade (receipt)
+// ─────────────────────────────────────────────────────────────
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('/trial/status', [\App\Http\Controllers\Api\TrialController::class, 'status']);
+    Route::post('/trial/upgrade', [\App\Http\Controllers\Api\TrialController::class, 'upgrade']);
+});

@@ -33,6 +33,7 @@ class User extends Authenticatable
         // 🌍 Dual Curriculum fields
         'curriculum_region',
         'payment_currency',
+        'trial_ends_at', 'is_premium', 'premium_expires_at',
     ];
 
     /**

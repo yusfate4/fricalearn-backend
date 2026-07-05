@@ -182,8 +182,8 @@ class OnboardingController extends Controller
             'maths_grade'        => 'nullable|integer|min:1|max:11',
             'english_grade'      => 'nullable|integer|min:1|max:11',
             'currency'           => 'required|in:NGN,GBP',
-            'total_amount'       => 'required|numeric',
-            'receipt'            => 'required|file|mimes:jpg,jpeg,png,pdf|max:5120',
+            'total_amount'       => 'nullable|numeric',
+            'receipt'            => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:5120',
         ]);
 
         $curriculumRegion = $validated['currency'] === 'NGN' ? 'nigeria' : 'uk';
@@ -207,6 +207,11 @@ class OnboardingController extends Controller
                 'onboarding_completed' => true,
                 'curriculum_region'    => $curriculumRegion,
                 'payment_currency'     => $validated['currency'],
+                // 🆓 Freemium: every child starts a 14-day free trial
+                'trial_ends_at'        => now()->addDays(14),
+                // If they paid upfront (receipt uploaded), grant premium immediately
+                'is_premium'           => $request->hasFile('receipt'),
+                'premium_expires_at'   => $request->hasFile('receipt') ? now()->addDays(30) : null,
             ]);
 
             // ── 2. Link parent-child ──────────────────────────────
@@ -225,11 +230,12 @@ class OnboardingController extends Controller
                 $receiptPath = $file->storeAs('receipts', $fileName, 'public');
             }
 
-            // ── 4. Payment record ─────────────────────────────────
-            $payment = EnrollmentPayment::create([
+            // ── 4. Payment record (only if paid upfront; trial signups skip) ──
+            $payment = null;
+            if ($receiptPath) $payment = EnrollmentPayment::create([
                 'parent_id'        => $validated['parent_id'],
                 'course_id'        => null,
-                'amount'           => $validated['total_amount'],
+                'amount'           => $validated['total_amount'] ?? 0,
                 'currency'         => $validated['currency'],
                 'receipt_path'     => $receiptPath,
                 'child_name'       => $validated['child_name'],
@@ -329,7 +335,7 @@ class OnboardingController extends Controller
                 'success'           => true,
                 'message'           => 'Child enrolled successfully with immediate access!',
                 'child_id'          => $child->id,
-                'payment_id'        => $payment->id,
+                'payment_id'        => $payment?->id,
                 'curriculum_region' => $curriculumRegion,
             ]);
 
