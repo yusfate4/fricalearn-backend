@@ -173,6 +173,13 @@ class OnboardingController extends Controller
 
     public function submitOnboarding(Request $request)
     {
+        // 📦 FormData sends selected_courses as a JSON string — decode to a real array
+        if (is_string($request->input('selected_courses'))) {
+            $request->merge([
+                'selected_courses' => json_decode($request->input('selected_courses'), true) ?? [],
+            ]);
+        }
+
         $validated = $request->validate([
             'parent_id'          => 'required|exists:users,id',
             'child_name'         => 'required|string|max:255',
