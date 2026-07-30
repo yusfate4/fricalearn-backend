@@ -39,7 +39,7 @@ class WelcomeParentNotification extends Notification
         ->greeting('Welcome, ' . $notifiable->name . '!')
         ->line('We are thrilled to have you join the FricaLearn Diaspora Academy.')
         ->line('Your account has been set up successfully. You can now log in to add, monitor your child’s progress, manage their lessons, and join our vibrant community.')
-        ->action('Go to Parent Portal', url('/parent/dashboard'))
+        ->action('Go to Parent Portal', url('https://fricalearn.com/parent/dashboard'))
         ->line('Thank you for choosing to invest in your child’s cultural heritage!');
 }
 
