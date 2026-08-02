@@ -19,6 +19,13 @@ class SendWeeklyFeedback extends Command
         $pairs = DB::table('parent_child as pc')
             ->join('users as p', 'p.id', '=', 'pc.parent_id')
             ->join('users as c', 'c.id', '=', 'pc.child_id')
+            // 💜 Skip students currently on free trial — they already get
+            // the twice-weekly trial check-ins (reports:trial-feedback).
+            ->where(function ($q) {
+                $q->where('c.is_premium', 1)
+                  ->orWhereNull('c.trial_ends_at')
+                  ->orWhere('c.trial_ends_at', '<', now());
+            })
             ->select('p.email as parent_email', 'p.name as parent_name',
                      'c.id as child_id', 'c.name as child_name')
             ->get();
