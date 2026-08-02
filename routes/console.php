@@ -48,3 +48,7 @@ Schedule::command('reports:weekly-feedback')->weeklyOn(0, '19:00');
 
 // ⏰ INACTIVITY REMINDER — students idle 14+ days (daily check, 10:00 AM)
 Schedule::command('reminders:inactive-students')->dailyAt('10:00');
+
+// 💜 TRIAL FEEDBACK CHECK-INS → parents on trial (Tuesdays 10 AM + Fridays 5 PM)
+Schedule::command('reports:trial-feedback')->weeklyOn(2, '10:00');
+Schedule::command('reports:trial-feedback')->weeklyOn(5, '17:00');
