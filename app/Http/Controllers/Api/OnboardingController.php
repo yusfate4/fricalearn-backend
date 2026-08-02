@@ -215,7 +215,7 @@ class OnboardingController extends Controller
                 'curriculum_region'    => $curriculumRegion,
                 'payment_currency'     => $validated['currency'],
                 // 🆓 Freemium: every child starts a 14-day free trial
-                'trial_ends_at'        => now()->addDays(14),
+                'trial_ends_at'        => now()->addDays(30),
                 // If they paid upfront (receipt uploaded), grant premium immediately
                 'is_premium'           => $request->hasFile('receipt'),
                 'premium_expires_at'   => $request->hasFile('receipt') ? now()->addDays(30) : null,
@@ -337,6 +337,39 @@ class OnboardingController extends Controller
             );
 
             DB::commit();
+
+            // 📧 Payment confirmation email (only when they paid upfront)
+            if ($receiptPath) {
+                try {
+                    $parent    = User::find($validated['parent_id']);
+                    $symbol    = $validated['currency'] === 'NGN' ? '₦' : '£';
+                    $amountFmt = $symbol . number_format((float) ($validated['total_amount'] ?? 0), $validated['currency'] === 'NGN' ? 0 : 2);
+                    if ($parent && $parent->email) {
+                        $html = "
+                        <div style='font-family:Arial,sans-serif;max-width:600px;margin:0 auto;'>
+                          <div style='background:#0E1C0E;padding:24px;border-radius:16px 16px 0 0;'>
+                            <h1 style='color:#fff;margin:0;font-size:20px;'>Frica<span style='color:#F4B400;'>Learn</span></h1>
+                          </div>
+                          <div style='background:#fff;border:1px solid #eee;border-top:none;padding:24px;border-radius:0 0 16px 16px;'>
+                            <p>Dear " . e($parent->name) . ",</p>
+                            <h2 style='color:#2D5A27;font-size:18px;'>✅ Payment received — enrolment complete!</h2>
+                            <p style='line-height:1.6;'>Thank you! We've received your payment of <strong>{$amountFmt}</strong> and
+                            <strong>" . e($child->name) . "</strong> is fully enrolled with immediate access to their courses.</p>
+                            <p style='font-size:13px;color:#666;line-height:1.6;'>Our team verifies all bank transfers within 24 hours.
+                            If anything doesn't match we'll contact you — otherwise no action is needed.</p>
+                            <p style='margin-top:20px;'><a href='https://fricalearn.com/login' style='background:#2D5A27;color:#fff;padding:12px 24px;border-radius:12px;text-decoration:none;font-weight:bold;'>Open Parent Portal</a></p>
+                            <p style='color:#999;font-size:12px;margin-top:24px;'>FRICA SOLUTION LIMITED · hello@fricalearn.com · WhatsApp +234 817 448 5504</p>
+                          </div>
+                        </div>";
+                        \Illuminate\Support\Facades\Mail::html($html, function ($message) use ($parent, $child) {
+                            $message->to($parent->email)
+                                ->subject("✅ Payment confirmed — {$child->name} is enrolled at FricaLearn!");
+                        });
+                    }
+                } catch (\Exception $mailErr) {
+                    \Log::error('Onboarding payment confirmation email failed: ' . $mailErr->getMessage());
+                }
+            }
 
             return response()->json([
                 'success'           => true,
