@@ -79,21 +79,33 @@ class AuthController extends Controller
             'email_verified_at' => null, // ✅ Must verify email before accessing platform
         ]);
 
-        // Send email verification link
-        $user->sendEmailVerificationNotification();
+        // ── Send email verification link (wrapped so mail failure never breaks registration) ──
+        try {
+            $user->sendEmailVerificationNotification();
+        } catch (\Exception $e) {
+            Log::error("Verification email failed for {$user->email}: " . $e->getMessage());
+        }
 
         // 🚀 Handle Parent Specifics
         if ($user->role === 'parent') {
-            // 1. Notify Parent
-            $user->notify(new WelcomeParentNotification());
+            // 1. Welcome email to parent
+            try {
+                $user->notify(new WelcomeParentNotification());
+            } catch (\Exception $e) {
+                Log::error("Welcome notification failed for {$user->email}: " . $e->getMessage());
+            }
 
-            // 2. Notify Admin via Notification System
-            $admin = User::where('is_admin', 1)->first();
-            if ($admin) {
-                $admin->notify(new AdminAlertNotification(
-                    '🔔 New Parent Registration',
-                    "A new parent, {$user->name} ({$user->email}), has just joined FricaLearn."
-                ));
+            // 2. Notify Admin
+            try {
+                $admin = User::where('is_admin', 1)->first();
+                if ($admin) {
+                    $admin->notify(new AdminAlertNotification(
+                        '🔔 New Parent Registration',
+                        "A new parent, {$user->name} ({$user->email}), has just joined FricaLearn."
+                    ));
+                }
+            } catch (\Exception $e) {
+                Log::error("Admin alert notification failed: " . $e->getMessage());
             }
         }
 
