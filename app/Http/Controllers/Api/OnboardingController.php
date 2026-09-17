@@ -397,6 +397,66 @@ class OnboardingController extends Controller
 
             DB::commit();
 
+            // ── Send enrolment confirmation email to parent ──────────
+            try {
+                $parent = \App\Models\User::find($validated['parent_id']);
+                if ($parent && $parent->email) {
+                    $trialEnds   = $child->trial_ends_at
+                        ? \Illuminate\Support\Carbon::parse($child->trial_ends_at)->format('d F Y')
+                        : '30 days from today';
+                    $courses     = collect($validated['selected_courses'])
+                        ->map(fn($id) => match($id) {
+                            'maths'   => 'Mathematics',
+                            'english' => 'English',
+                            'yoruba'  => 'Yoruba Language',
+                            'hausa'   => 'Hausa Language',
+                            'igbo'    => 'Igbo Language',
+                            default   => ucfirst($id),
+                        })->join(', ');
+
+                    $html = "
+                    <div style='font-family:Arial,sans-serif;max-width:600px;margin:0 auto;'>
+                      <div style='background:#2A1650;padding:24px;border-radius:16px 16px 0 0;'>
+                        <h1 style='color:#fff;margin:0;font-size:20px;'>Frica<span style='color:#FFFF00;'>Learn</span></h1>
+                      </div>
+                      <div style='background:#fff;border:1px solid #eee;border-top:none;padding:28px;border-radius:0 0 16px 16px;'>
+                        <p>Dear " . e($parent->name) . ",</p>
+                        <h2 style='color:#3F2171;font-size:18px;'>🎉 " . e($child->name) . " is enrolled and ready to learn!</h2>
+                        <p style='line-height:1.6;'>Your child has been successfully enrolled on FricaLearn.
+                        Their 1-month free trial starts today — no payment required until the trial ends.</p>
+                        <div style='background:#f3effa;border-radius:12px;padding:16px;margin:16px 0;'>
+                          <table width='100%' style='font-size:14px;'>
+                            <tr><td style='padding:4px 0;color:#666;'>Student</td><td style='text-align:right;font-weight:bold;'>" . e($child->name) . "</td></tr>
+                            <tr><td style='padding:4px 0;color:#666;'>Courses</td><td style='text-align:right;font-weight:bold;'>{$courses}</td></tr>
+                            <tr><td style='padding:4px 0;color:#666;'>Free trial ends</td><td style='text-align:right;font-weight:bold;'>{$trialEnds}</td></tr>
+                            <tr><td style='padding:4px 0;color:#666;'>AI Tutor</td><td style='text-align:right;'>Available 24/7</td></tr>
+                          </table>
+                        </div>
+                        <p style='line-height:1.6;font-size:13px;color:#555;'>
+                          " . e($child->name) . " can start learning immediately. You'll receive weekly feedback
+                          emails and a full monthly progress report — so you always know how they're doing.
+                        </p>
+                        <p style='margin-top:20px;'>
+                          <a href='https://fricalearn.com/parent/dashboard'
+                             style='background:#3F2171;color:#fff;padding:12px 24px;border-radius:12px;text-decoration:none;font-weight:bold;'>
+                            Open Parent Dashboard
+                          </a>
+                        </p>
+                        <p style='color:#999;font-size:12px;margin-top:24px;'>
+                          FRICA SOLUTION LIMITED · hello@fricalearn.com · WhatsApp +234 817 448 5504
+                        </p>
+                      </div>
+                    </div>";
+
+                    \Illuminate\Support\Facades\Mail::html($html, function ($m) use ($parent, $child) {
+                        $m->to($parent->email)
+                          ->subject("🎉 " . $child->name . " is enrolled at FricaLearn — free trial starts today!");
+                    });
+                }
+            } catch (\Exception $mailErr) {
+                \Log::error('Enrolment confirmation email failed: ' . $mailErr->getMessage());
+            }
+
             return response()->json([
                 'success' => true,
                 'message' => 'Child enrolled successfully with immediate access!',
