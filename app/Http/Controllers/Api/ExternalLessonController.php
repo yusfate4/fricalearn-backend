@@ -22,7 +22,11 @@ class ExternalLessonController extends Controller
 
     public function indexByTopic($topicId)
     {
-        $topic = ExternalTopic::with('lessons')->findOrFail($topicId);
+        $topic = ExternalTopic::with(['lessons' => function ($q) {
+            $q->whereNotNull('grade_level') // hide null-grade (blank/copyright) lessons
+              ->where('grade_level', '>', 0)
+              ->orderBy('order_index');
+        }])->findOrFail($topicId);
         return response()->json(['success' => true, 'topic' => $topic]);
     }
 
@@ -30,41 +34,10 @@ class ExternalLessonController extends Controller
     // GET SINGLE LESSON — lazy fetch if not yet populated
     // =========================================================
 
-    /**
-     * 🔒 Freemium gate: Maths/English lessons require an active
-     * 14-day trial or premium. Returns null if allowed, or a 402 response.
-     */
-    private function premiumGate($studentId)
-    {
-        $student = \App\Models\User::find($studentId);
-        if (!$student) return null;
-
-        $isPremium = (bool) $student->is_premium
-            && (!$student->premium_expires_at || now()->lt($student->premium_expires_at));
-        if ($isPremium) return null;
-
-        $onTrial = $student->trial_ends_at && now()->lt($student->trial_ends_at);
-        if ($onTrial) return null;
-
-        // Legacy accounts with no trial date set: allow (grandfathered)
-        if (!$student->trial_ends_at) return null;
-
-        return response()->json([
-            'success'       => false,
-            'access'        => 'expired',
-            'trial_expired' => true,
-            'message'       => 'Your free trial has ended. Upgrade to continue learning Maths and English!',
-        ], 402);
-    }
-
     public function show($id)
     {
         $lesson = ExternalLesson::with('topic.subject')->findOrFail($id);
         $user   = auth()->user();
-
-        // 🔒 Trial/premium gate (effective student = student_id param for parents)
-        $effectiveStudentId = request('student_id') ?: $user->id;
-        if ($gate = $this->premiumGate($effectiveStudentId)) return $gate;
 
         if ($this->needsOakContent($lesson)) {
             $lesson = $this->fetchAndStoreOakContent($lesson);
@@ -210,11 +183,6 @@ class ExternalLessonController extends Controller
     public function submitQuiz(Request $request, $lessonId)
     {
         $student  = auth()->user();
-
-        // 🔒 Trial/premium gate
-        $effectiveStudentId = $request->input('student_id') ?: $student->id;
-        if ($gate = $this->premiumGate($effectiveStudentId)) return $gate;
-
         $lesson   = DB::table('external_lessons')->find($lessonId);
         $quizData = json_decode($lesson->quiz_data, true);
 
@@ -261,22 +229,10 @@ class ExternalLessonController extends Controller
             ['status' => $passed ? 'completed' : 'in_progress', 'quiz_score' => $score, 'completed_at' => $passed ? now() : null]
         );
 
-        // 🏆 Topic evaluation — fires when the last quiz-lesson in the topic is completed
-        $topicEvaluation = null;
-        if ($passed) {
-            try {
-                $topicEvaluation = app(\App\Services\TopicEvaluationService::class)
-                    ->evaluateIfTopicComplete($student->id, (int) $lesson->topic_id);
-            } catch (\Exception $e) {
-                Log::error('Topic evaluation failed: ' . $e->getMessage());
-            }
-        }
-
         return response()->json([
             'success' => true, 'score' => $score,
             'correct_answers' => $correct, 'total_questions' => $total,
             'passed' => $passed,
-            'topic_evaluation' => $topicEvaluation,
             'message' => $passed ? '🎉 Great job!' : '📚 Keep practicing!',
         ]);
     }
