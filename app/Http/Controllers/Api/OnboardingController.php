@@ -201,8 +201,8 @@ class OnboardingController extends Controller
             'gender'           => 'nullable|in:male,female', // optional
             'selected_courses' => 'required|array',
             'selected_courses.*' => 'required|string',
-            'maths_grade'      => 'nullable|integer|min:1|max:10',
-            'english_grade'    => 'nullable|integer|min:1|max:10',
+            'maths_grade'      => 'nullable|integer|min:1|max:13',
+            'english_grade'    => 'nullable|integer|min:1|max:13',
             'currency'         => 'required|in:NGN,GBP',
             'total_amount'     => 'nullable|numeric',        // 0 for free trial
             'receipt'          => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:5120', // optional on free trial
@@ -220,11 +220,11 @@ class OnboardingController extends Controller
                 'email' => $childEmail,
                 'password' => Hash::make($childPassword),
                 'role' => 'student',
-                'birth_date' => $validated['birth_date'],
-                'gender' => $validated['gender'],
+                'birth_date' => $validated['birth_date'] ?? null,
+                'gender' => $validated['gender'] ?? null,
                 'selected_courses' => json_encode($validated['selected_courses']),
-                'maths_grade' => $validated['maths_grade'],
-                'english_grade' => $validated['english_grade'],
+                'maths_grade' => $validated['maths_grade'] ?? null,
+                'english_grade' => $validated['english_grade'] ?? null,
                 'onboarding_completed' => true,
             ]);
 
@@ -280,7 +280,7 @@ class OnboardingController extends Controller
                 if ($courseId === 'maths' || $courseId === 'english') {
                     // UK Curriculum subjects - create ExternalSubject enrollment
                     $subjectName = $courseId === 'maths' ? 'Mathematics' : 'English';
-                    $grade = $courseId === 'maths' ? $validated['maths_grade'] : $validated['english_grade'];
+                    $grade = $courseId === 'maths' ? ($validated['maths_grade'] ?? null) : ($validated['english_grade'] ?? null);
                     
                     if ($grade) {
                         // Calculate Key Stage based on year
