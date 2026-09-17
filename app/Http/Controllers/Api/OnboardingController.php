@@ -260,6 +260,7 @@ class OnboardingController extends Controller
 
             // 4. Create payment record — only when a receipt was uploaded
             //    Free trial path: no receipt, no payment record needed
+            $payment = null; // null for free trial path
             if ($receiptPath) {
                 $payment = EnrollmentPayment::create([
                     'parent_id'       => $validated['parent_id'],
@@ -400,7 +401,7 @@ class OnboardingController extends Controller
                 'success' => true,
                 'message' => 'Child enrolled successfully with immediate access!',
                 'child_id' => $child->id,
-                'payment_id' => $payment->id,
+                'payment_id' => $payment?->id ?? null,
             ]);
 
         } catch (\Exception $e) {
