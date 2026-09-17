@@ -404,14 +404,16 @@ class OnboardingController extends Controller
                     $trialEnds   = $child->trial_ends_at
                         ? \Illuminate\Support\Carbon::parse($child->trial_ends_at)->format('d F Y')
                         : '30 days from today';
-                    $courses     = collect($validated['selected_courses'])
-                        ->map(fn($id) => match($id) {
-                            'maths'   => 'Mathematics',
-                            'english' => 'English',
-                            'yoruba'  => 'Yoruba Language',
-                            'hausa'   => 'Hausa Language',
-                            'igbo'    => 'Igbo Language',
-                            default   => ucfirst($id),
+                    $courseNames = [
+                        'maths'   => 'Mathematics',
+                        'english' => 'English',
+                        'yoruba'  => 'Yoruba Language',
+                        'hausa'   => 'Hausa Language',
+                        'igbo'    => 'Igbo Language',
+                    ];
+                    $courses = collect($validated['selected_courses'])
+                        ->map(function($id) use ($courseNames) {
+                            return $courseNames[$id] ?? ucfirst($id);
                         })->join(', ');
 
                     $html = "
@@ -461,7 +463,7 @@ class OnboardingController extends Controller
                 'success' => true,
                 'message' => 'Child enrolled successfully with immediate access!',
                 'child_id' => $child->id,
-                'payment_id' => $payment?->id ?? null,
+                'payment_id' => ($payment !== null) ? $payment->id : null,
             ]);
 
         } catch (\Exception $e) {
