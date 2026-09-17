@@ -37,12 +37,14 @@ class AppServiceProvider extends ServiceProvider
         // 2. Email Verification Template Customization
         VerifyEmail::toMailUsing(function ($notifiable, $url) {
             return (new MailMessage)
-                ->subject('Ẹ kú àbọ̀! Verify Your FricaLearn Account')
-                ->greeting('Hello ' . $notifiable->name . '!')
-                ->line('Welcome to FricaLearn Diaspora Academy. We are excited to have you preserve our heritage.')
-                ->action('Verify Email Address', $url)
-                ->line('If you did not create an account, no further action is required.')
-                ->salutation('Olukọ from FricaLearn');
+                ->subject('Please verify your FricaLearn email address')
+            ->greeting('Hello ' . ($this->notifiable->name ?? 'there') . '!')
+            ->line('Thank you for registering with FricaLearn Diaspora Academy.')
+            ->line('Please click the button below to verify your email address and activate your account.')
+            ->action('Verify Email Address', $url)
+            ->line('This link will expire in 60 minutes.')
+            ->line('If you did not create a FricaLearn account, no further action is required.')
+            ->salutation('The FricaLearn Team');
         });
     }
 }
