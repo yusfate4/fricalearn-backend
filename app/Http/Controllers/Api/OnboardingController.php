@@ -187,18 +187,25 @@ class OnboardingController extends Controller
      */
     public function submitOnboarding(Request $request)
     {
+        // Decode selected_courses if sent as JSON string (FormData limitation)
+        if (is_string($request->input('selected_courses'))) {
+            $request->merge([
+                'selected_courses' => json_decode($request->input('selected_courses'), true) ?? [],
+            ]);
+        }
+
         $validated = $request->validate([
-            'parent_id' => 'required|exists:users,id',
-            'child_name' => 'required|string|max:255',
-            'birth_date' => 'required|date',
-            'gender' => 'required|in:male,female',
+            'parent_id'        => 'required|exists:users,id',
+            'child_name'       => 'required|string|max:255',
+            'birth_date'       => 'nullable|date',           // optional — child age collected separately
+            'gender'           => 'nullable|in:male,female', // optional
             'selected_courses' => 'required|array',
             'selected_courses.*' => 'required|string',
-            'maths_grade' => 'nullable|integer|min:1|max:10',
-            'english_grade' => 'nullable|integer|min:1|max:10',
-            'currency' => 'required|in:NGN,GBP',
-            'total_amount' => 'required|numeric',
-            'receipt' => 'required|file|mimes:jpg,jpeg,png,pdf|max:5120',
+            'maths_grade'      => 'nullable|integer|min:1|max:10',
+            'english_grade'    => 'nullable|integer|min:1|max:10',
+            'currency'         => 'required|in:NGN,GBP',
+            'total_amount'     => 'nullable|numeric',        // 0 for free trial
+            'receipt'          => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:5120', // optional on free trial
         ]);
 
         DB::beginTransaction();
