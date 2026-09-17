@@ -34,16 +34,18 @@ class ExternalLessonController extends Controller
     // GET SINGLE LESSON — lazy fetch if not yet populated
     // =========================================================
 
-    public function show($id)
+    public function show(Request $request, $id)
     {
         $lesson = ExternalLesson::with('topic.subject')->findOrFail($id);
-        $user   = auth()->user();
 
         if ($this->needsOakContent($lesson)) {
             $lesson = $this->fetchAndStoreOakContent($lesson);
         }
 
-        $progress = UserExternalLessonProgress::where('user_id', $user->id)
+        // Use student_id if provided (parent impersonating child)
+        $studentId = $request->query('student_id') ?: auth()->id();
+
+        $progress = UserExternalLessonProgress::where('user_id', $studentId)
             ->where('lesson_id', $id)
             ->first();
 

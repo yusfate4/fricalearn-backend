@@ -216,16 +216,22 @@ class OnboardingController extends Controller
             $childPassword = Str::random(12); // Generate random password
             
             $child = User::create([
-                'name' => $validated['child_name'],
-                'email' => $childEmail,
-                'password' => Hash::make($childPassword),
-                'role' => 'student',
-                'birth_date' => $validated['birth_date'] ?? null,
-                'gender' => $validated['gender'] ?? null,
-                'selected_courses' => json_encode($validated['selected_courses']),
-                'maths_grade' => $validated['maths_grade'] ?? null,
-                'english_grade' => $validated['english_grade'] ?? null,
+                'name'                 => $validated['child_name'],
+                'email'                => $childEmail,
+                'password'             => Hash::make($childPassword),
+                'role'                 => 'student',
+                'birth_date'           => $validated['birth_date'] ?? null,
+                'gender'               => $validated['gender'] ?? null,
+                'selected_courses'     => json_encode($validated['selected_courses']),
+                'maths_grade'          => $validated['maths_grade'] ?? null,
+                'english_grade'        => $validated['english_grade'] ?? null,
                 'onboarding_completed' => true,
+                'is_active'            => true,
+                'email_verified_at'    => now(),          // child accounts auto-verified
+                'curriculum_region'    => $validated['currency'] === 'GBP' ? 'uk' : 'nigeria',
+                'payment_currency'     => $validated['currency'],
+                'trial_ends_at'        => now()->addDays(30), // ✅ 30-day free trial starts NOW
+                'is_premium'           => false,
             ]);
 
             // 2. Link parent-child relationship
