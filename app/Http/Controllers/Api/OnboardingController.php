@@ -258,22 +258,25 @@ class OnboardingController extends Controller
                 // }
             }
 
-            // 4. Create payment record with auto-approval
-            $payment = EnrollmentPayment::create([
-                'parent_id' => $validated['parent_id'],
-                'course_id' => null, // Multi-course enrollment
-                'amount' => $validated['total_amount'],
-                'currency' => $validated['currency'],
-                'receipt_path' => $receiptPath,
-                'child_name' => $validated['child_name'],
-                'status' => 'temporary_approved', // Auto-approved!
-                'auto_approved' => true,
-                'includes_maths' => in_array('maths', $validated['selected_courses']),
-                'includes_english' => in_array('english', $validated['selected_courses']),
-                'includes_yoruba' => in_array('yoruba', $validated['selected_courses']),
-                'includes_hausa' => in_array('hausa', $validated['selected_courses']),
-                'includes_igbo' => in_array('igbo', $validated['selected_courses']),
-            ]);
+            // 4. Create payment record — only when a receipt was uploaded
+            //    Free trial path: no receipt, no payment record needed
+            if ($receiptPath) {
+                $payment = EnrollmentPayment::create([
+                    'parent_id'       => $validated['parent_id'],
+                    'course_id'       => null,
+                    'amount'          => $validated['total_amount'] ?? 0,
+                    'currency'        => $validated['currency'],
+                    'receipt_path'    => $receiptPath,
+                    'child_name'      => $validated['child_name'],
+                    'status'          => 'temporary_approved',
+                    'auto_approved'   => true,
+                    'includes_maths'  => in_array('maths', $validated['selected_courses']),
+                    'includes_english'=> in_array('english', $validated['selected_courses']),
+                    'includes_yoruba' => in_array('yoruba', $validated['selected_courses']),
+                    'includes_hausa'  => in_array('hausa', $validated['selected_courses']),
+                    'includes_igbo'   => in_array('igbo', $validated['selected_courses']),
+                ]);
+            }
 
             // 5. Auto-enroll student in selected courses
             foreach ($validated['selected_courses'] as $courseId) {
