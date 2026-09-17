@@ -28,91 +28,60 @@ class ParentController extends Controller
 
     /**
      * 📊 Master Dashboard Data
-     * Fix: Fetches BOTH language courses AND UK Curriculum enrollments
+     * Fix: Ensures active_enrollments are correctly mapped for the frontend.
      */
     public function getDashboardData(Request $request)
     {
         $parent = $request->user();
         $childIds = $this->getLinkedChildIds($parent);
 
-        // 1. Fetch Children with Profiles
-        $children = User::whereIn('id', $childIds)->with(['studentProfile'])->get();
+        // 1. Fetch Children with Profiles + trial info + selected_courses
+        $children = User::whereIn('id', $childIds)
+            ->with(['studentProfile', 'externalSubjects'])
+            ->get();
 
-        // 2. Fetch Language Course Enrollments
-        $courseEnrollments = CourseEnrollment::with(['course'])
+        // 2. Fetch Active Enrollments (The bridge between student and classroom)
+        $activeEnrollments = CourseEnrollment::with(['course'])
             ->whereIn('student_id', $childIds)
             ->where('status', 'active')
-            ->get()
-            ->map(function($enrollment) {
-                return [
-                    'student_id' => $enrollment->student_id,
-                    'course_id' => $enrollment->course_id,
-                    'course' => $enrollment->course ? [
-                        'id' => $enrollment->course->id,
-                        'title' => $enrollment->course->title,
-                    ] : null,
-                    'type' => 'language_course'
-                ];
-            });
+            ->get();
 
-        // 3. Fetch UK Curriculum Enrollments (Maths/English)
-        $externalEnrollments = DB::table('user_external_subject_enrollments')
-            ->whereIn('user_id', $childIds)
-            ->join('external_subjects', 'external_subjects.id', '=', 'user_external_subject_enrollments.external_subject_id')
-            ->select(
-                'user_external_subject_enrollments.user_id as student_id',
-                'user_external_subject_enrollments.external_subject_id',
-                'external_subjects.name as subject_name',
-                'external_subjects.id as subject_id'
-            )
-            ->get()
-            ->map(function($enrollment) {
-                return [
-                    'student_id' => $enrollment->student_id,
-                    'external_subject_id' => $enrollment->external_subject_id,
-                    'external_subject' => [
-                        'id' => $enrollment->subject_id,
-                        'name' => $enrollment->subject_name,
-                    ],
-                    'type' => 'uk_curriculum'
-                ];
-            });
-
-        // 4. Merge both types of enrollments
-        $activeEnrollments = $courseEnrollments->merge($externalEnrollments);
-
-        // 5. Fetch Pending Payments (To show the "Awaiting Verification" section)
+        // 3. Fetch Pending Payments (To show the "Awaiting Verification" section)
         $pendingPayments = EnrollmentPayment::with(['course'])
             ->where('parent_id', $parent->id)
             ->where('status', 'pending')
             ->latest()
             ->get();
 
-        // 6. Add track info to children (for backward compatibility)
+        // 🚀 THE LOGIC FIX: Explicitly map the "Track" to the child object
         $childrenWithTracks = $children->map(function($child) use ($activeEnrollments) {
-            // Find enrollments for this child
-            $childEnrollments = $activeEnrollments->where('student_id', $child->id);
-            
-            if ($childEnrollments->isNotEmpty()) {
-                // Get first enrollment for current_track field
-                $firstEnrollment = $childEnrollments->first();
-                $child->current_track = $firstEnrollment['course']['title'] ?? 
-                                       $firstEnrollment['external_subject']['name'] ?? 
-                                       'Active';
+            $enrollment = $activeEnrollments->where('student_id', $child->id)->first();
+            if ($enrollment && $enrollment->course) {
+                $child->current_track = $enrollment->course->title;
             } else {
-                $child->current_track = $child->studentProfile->learning_language ?? 'No Track';
+                $child->current_track = $child->studentProfile->learning_language ?? 'General Heritage Path';
             }
+            // Include trial info for dashboard display
+            $child->trial_ends_at      = $child->trial_ends_at;
+            $child->is_premium         = $child->is_premium;
+            $child->premium_expires_at = $child->premium_expires_at;
+            // Include selected_courses (stored as JSON on the user)
+            $child->selected_courses   = $child->selected_courses;
+            // Include external subjects enrolled
+            $child->external_subjects  = $child->externalSubjects->map(fn($s) => [
+                'id'   => $s->id,
+                'name' => $s->name,
+            ]);
             return $child;
         });
 
         return response()->json([
             'parent_name'        => $parent->name,
-            'active_enrollments' => $activeEnrollments->values(), // Reset array keys
+            'active_enrollments' => $activeEnrollments, 
             'pending_payments'   => $pendingPayments,
             'children'           => $childrenWithTracks, 
             'stats' => [
-                'active_students' => $children->count(),
-                'active_courses' => $activeEnrollments->count(), // Total enrollments
+                'active_courses' => $children->count(), // number of enrolled children
                 'pending_count'  => $pendingPayments->count(),
             ]
         ]);
