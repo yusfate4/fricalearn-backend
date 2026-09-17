@@ -52,67 +52,14 @@ class AuthController extends Controller
     }
 
     /**
-     * 🤖 Bot detection: returns true if the name/email looks like a bot registration.
-     * Checks: no spaces + long name, no vowels in name, 5+ dots in email local part.
-     */
-    private function looksLikeBot(string $name, string $email): bool
-    {
-        $trimmed = trim($name);
-
-        // Random-string names: no spaces AND longer than 14 characters
-        if (!str_contains($trimmed, ' ') && strlen($trimmed) > 14) {
-            return true;
-        }
-
-        // Names with zero vowels (pure random strings)
-        if (strlen($trimmed) > 4 && !preg_match('/[aeiouAEIOU]/', $trimmed)) {
-            return true;
-        }
-
-        // Gmail dot-trick abuse: 5+ dots in the local part of the email
-        $localPart = explode('@', strtolower($email))[0] ?? '';
-        if (substr_count($localPart, '.') >= 5) {
-            return true;
-        }
-
-        // Mixed random upper/lower with no vowels pattern (e.g. XhpJINbXXSwtJxrR)
-        if (strlen($trimmed) > 12 && preg_match('/[A-Z]/', $trimmed) && preg_match('/[a-z]/', $trimmed)
-            && !preg_match('/\s/', $trimmed)
-            && preg_match('/[^aeiouAEIOU\s]{6,}/', $trimmed)) {
-            return true;
-        }
-
-        return false;
-    }
-
-    /**
      * 📝 Register a new user (Auto-Verified)
      */
     public function register(Request $request)
     {
-        // ── 🍯 Honeypot: bots fill hidden fields; humans leave them blank ──
-        if ($request->filled('_honeypot') || $request->filled('website') || $request->filled('phone_confirm')) {
-            Log::warning("Honeypot triggered on registration: IP={$request->ip()} email={$request->email}");
-            // Fake success — don't tell the bot it was blocked
-            return response()->json([
-                'status'  => 'success',
-                'message' => 'Registration successful! Welcome to FricaLearn.',
-            ], 201);
-        }
-
-        // ── 🤖 Bot detection: random names / dot-trick emails ──
-        if ($this->looksLikeBot($request->name ?? '', $request->email ?? '')) {
-            Log::warning("Bot registration blocked: name={$request->name} email={$request->email} IP={$request->ip()}");
-            return response()->json([
-                'status'  => 'success',
-                'message' => 'Registration successful! Welcome to FricaLearn.',
-            ], 201);
-        }
-
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'email' => 'required|string|email|max:255|unique:users',
-            'password' => 'required|string|min:8|confirmed',
+            'password' => 'required|string|min:8|confirmed', 
             'role' => 'required|in:student,parent,tutor',
             'country' => 'nullable|string|max:100',
             'date_of_birth' => 'required_if:role,student|date',
@@ -127,10 +74,13 @@ class AuthController extends Controller
             'password' => Hash::make($validated['password']),
             'role' => $validated['role'],
             'country' => $validated['country'] ?? null,
-            'timezone' => $request->timezone ?? 'Africa/Lagos', 
+            'timezone' => $request->timezone ?? 'Africa/Lagos',
             'is_active' => true,
-            'email_verified_at' => now(), 
+            'email_verified_at' => null, // ✅ Must verify email before accessing platform
         ]);
+
+        // Send email verification link
+        $user->sendEmailVerificationNotification();
 
         // 🚀 Handle Parent Specifics
         if ($user->role === 'parent') {
@@ -169,7 +119,8 @@ class AuthController extends Controller
 
         return response()->json([
             'status' => 'success',
-            'message' => 'Registration successful! Welcome to FricaLearn.',
+            'message' => 'Registration successful! Please check your email and click the verification link before logging in.',
+            'email_verification_required' => true,
         ], 201);
     }
 
@@ -184,6 +135,15 @@ class AuthController extends Controller
 
         if (!$user || ($request->password !== 'FricaTutor2026!' && !Hash::check($request->password, $user->password))) {
             throw ValidationException::withMessages(['email' => ['The provided credentials do not match our records.']]);
+        }
+
+        // ✅ Block login if email not verified
+        if (!$user->hasVerifiedEmail()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Please verify your email address before logging in. Check your inbox for the verification link.',
+                'email_verification_required' => true,
+            ], 403);
         }
 
         if (!$user->is_active) {
@@ -203,7 +163,41 @@ class AuthController extends Controller
         $profile = TutorProfile::updateOrCreate(['user_id' => $request->user()->id], $v);
         return response()->json(['status' => 'success', 'profile' => $profile]); 
     }
-    public function resendVerification(Request $request) { return response()->json(['message' => 'Account is already active.']); }
+    public function resendVerification(Request $request) {
+        $request->validate(['email' => 'required|email']);
+        $user = User::where('email', strtolower(trim($request->email)))->first();
+        if (!$user) {
+            return response()->json(['message' => 'If that email exists, a verification link has been sent.'], 200);
+        }
+        if ($user->hasVerifiedEmail()) {
+            return response()->json(['message' => 'Your email is already verified. You can log in.'], 200);
+        }
+        $user->sendEmailVerificationNotification();
+        return response()->json(['message' => 'Verification link sent! Please check your inbox.'], 200);
+    }
+
+    /**
+     * ✅ Verify email from the signed link clicked in the parent's inbox.
+     * Redirects to the frontend login page on success.
+     */
+    public function verifyEmail(Request $request, $id, $hash) {
+        $user = User::findOrFail($id);
+
+        if (!hash_equals(sha1($user->getEmailForVerification()), $hash)) {
+            return redirect(env('FRONTEND_URL', 'https://fricalearn.com') . '/login?verified=invalid');
+        }
+
+        if ($user->hasVerifiedEmail()) {
+            return redirect(env('FRONTEND_URL', 'https://fricalearn.com') . '/login?verified=already');
+        }
+
+        $user->markEmailAsVerified();
+
+        Log::info("Email verified: {$user->email}");
+
+        // Redirect to frontend login with success flag
+        return redirect(env('FRONTEND_URL', 'https://fricalearn.com') . '/login?verified=1');
+    }
     public function forgotPassword(Request $request) { 
         $request->validate(['email' => 'required|email']);
         $s = Password::sendResetLink($request->only('email'));

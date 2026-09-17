@@ -56,6 +56,11 @@ Route::prefix('auth')->group(function () {
     Route::post('/resend-verification', [AuthController::class, 'resendVerification']);
 });
 
+// ── Email verification (signed URL — clicked from the parent's inbox) ──
+Route::get('/email/verify/{id}/{hash}', [AuthController::class, 'verifyEmail'])
+    ->middleware(['signed'])
+    ->name('verification.verify');
+
 
 // OAK CURRICULUM (Subjects)
 Route::prefix('oak')->middleware('auth:sanctum')->group(function () {
