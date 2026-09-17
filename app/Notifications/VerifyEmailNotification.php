@@ -11,14 +11,13 @@ use Illuminate\Support\Facades\URL;
 class VerifyEmailNotification extends VerifyEmail
 {
     /**
-     * Custom email verification notification.
-     * Replaces the default Yoruba-greeting version with clean English.
+     * Build the mail message with clean English — no Yoruba greeting.
      */
-    protected function buildMailMessage($url)
+    protected function buildMailMessage($url): MailMessage
     {
         return (new MailMessage)
             ->subject('Please verify your FricaLearn email address')
-            ->greeting('Hello ' . $this->notifiable->name . '!')
+            ->greeting('Hello ' . ($this->notifiable->name ?? 'there') . '!')
             ->line('Thank you for registering with FricaLearn Diaspora Academy.')
             ->line('Please click the button below to verify your email address and activate your account.')
             ->action('Verify Email Address', $url)
@@ -28,13 +27,16 @@ class VerifyEmailNotification extends VerifyEmail
     }
 
     /**
-     * Keep the signed URL pointing to the API (which then redirects to frontend).
+     * Generate the signed verification URL pointing to the API.
+     * Uses APP_URL from .env — must be https://api.fricalearn.com
      */
-    protected function verificationUrl($notifiable)
+    protected function verificationUrl($notifiable): string
     {
         return URL::temporarySignedRoute(
             'verification.verify',
-            Carbon::now()->addMinutes(Config::get('auth.verification.expire', 60)),
+            Carbon::now()->addMinutes(
+                Config::get('auth.verification.expire', 60)
+            ),
             [
                 'id'   => $notifiable->getKey(),
                 'hash' => sha1($notifiable->getEmailForVerification()),
