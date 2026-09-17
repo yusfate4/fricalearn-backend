@@ -122,6 +122,9 @@ class TrialController extends Controller
 
         $student->update(['is_premium' => true, 'premium_expires_at' => $expires]);
 
+        // 🔔 Notify admin that a receipt was uploaded and needs verification
+        $this->notifyAdmin($student, $amount, $validated['currency'], $tier, $receiptPath);
+
         $this->sendConfirmationEmail($student, $amount, $validated['currency'], $tier, $expires, $isParent ? $requester : null);
 
         return response()->json([
@@ -180,4 +183,42 @@ class TrialController extends Controller
             Log::error('Upgrade confirmation email failed: ' . $e->getMessage());
         }
     }
+
+    private function notifyAdmin(\App\Models\User $student, $amount, string $currency, array $tier, string $receiptPath): void
+    {
+        try {
+            $admin = \App\Models\User::where('is_admin', 1)->first();
+            if (!$admin || !$admin->email) return;
+
+            $sym    = $currency === 'NGN' ? '₦' : '£';
+            $amt    = $sym . number_format((float)$amount, $currency === 'NGN' ? 0 : 2);
+            $receiptUrl = asset('storage/' . $receiptPath);
+
+            $html = "
+            <div style='font-family:Arial,sans-serif;max-width:600px;margin:0 auto;'>
+              <div style='background:#2A1650;padding:20px;border-radius:12px 12px 0 0;'>
+                <h2 style='color:#FFFF00;margin:0;'>🧾 New Payment Receipt</h2>
+              </div>
+              <div style='background:#fff;border:1px solid #eee;padding:24px;border-radius:0 0 12px 12px;'>
+                <p><strong>Student:</strong> " . e($student->name) . "</p>
+                <p><strong>Plan:</strong> {$tier['label']} ({$tier['days']} days)</p>
+                <p><strong>Amount:</strong> {$amt}</p>
+                <p><strong>Currency:</strong> {$currency}</p>
+                <p style='margin-top:20px;'>
+                  <a href='" . env('APP_URL') . "/admin' style='background:#3F2171;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:bold;margin-right:10px;'>View Admin Dashboard</a>
+                  <a href='{$receiptUrl}' style='background:#1A7A4A;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:bold;'>View Receipt</a>
+                </p>
+                <p style='color:#999;font-size:12px;margin-top:16px;'>Please verify this payment and approve or reject it in the admin portal.</p>
+              </div>
+            </div>";
+
+            \Illuminate\Support\Facades\Mail::html($html, function ($m) use ($admin, $student) {
+                $m->to($admin->email)
+                  ->subject("🧾 Payment Receipt — {$student->name} awaiting verification");
+            });
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error('Admin receipt notification failed: ' . $e->getMessage());
+        }
+    }
+
 }
