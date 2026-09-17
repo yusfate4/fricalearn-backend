@@ -52,67 +52,14 @@ class AuthController extends Controller
     }
 
     /**
-     * 🤖 Bot detection: returns true if the name/email looks like a bot registration.
-     * Checks: no spaces + long name, no vowels in name, 5+ dots in email local part.
-     */
-    private function looksLikeBot(string $name, string $email): bool
-    {
-        $trimmed = trim($name);
-
-        // Random-string names: no spaces AND longer than 14 characters
-        if (!str_contains($trimmed, ' ') && strlen($trimmed) > 14) {
-            return true;
-        }
-
-        // Names with zero vowels (pure random strings)
-        if (strlen($trimmed) > 4 && !preg_match('/[aeiouAEIOU]/', $trimmed)) {
-            return true;
-        }
-
-        // Gmail dot-trick abuse: 5+ dots in the local part of the email
-        $localPart = explode('@', strtolower($email))[0] ?? '';
-        if (substr_count($localPart, '.') >= 5) {
-            return true;
-        }
-
-        // Mixed random upper/lower with no vowels pattern (e.g. XhpJINbXXSwtJxrR)
-        if (strlen($trimmed) > 12 && preg_match('/[A-Z]/', $trimmed) && preg_match('/[a-z]/', $trimmed)
-            && !preg_match('/\s/', $trimmed)
-            && preg_match('/[^aeiouAEIOU\s]{6,}/', $trimmed)) {
-            return true;
-        }
-
-        return false;
-    }
-
-    /**
      * 📝 Register a new user (Auto-Verified)
      */
     public function register(Request $request)
     {
-        // ── 🍯 Honeypot: bots fill hidden fields; humans leave them blank ──
-        if ($request->filled('_honeypot') || $request->filled('website') || $request->filled('phone_confirm')) {
-            Log::warning("Honeypot triggered on registration: IP={$request->ip()} email={$request->email}");
-            // Fake success — don't tell the bot it was blocked
-            return response()->json([
-                'status'  => 'success',
-                'message' => 'Registration successful! Welcome to FricaLearn.',
-            ], 201);
-        }
-
-        // ── 🤖 Bot detection: random names / dot-trick emails ──
-        if ($this->looksLikeBot($request->name ?? '', $request->email ?? '')) {
-            Log::warning("Bot registration blocked: name={$request->name} email={$request->email} IP={$request->ip()}");
-            return response()->json([
-                'status'  => 'success',
-                'message' => 'Registration successful! Welcome to FricaLearn.',
-            ], 201);
-        }
-
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'email' => 'required|string|email|max:255|unique:users',
-            'password' => 'required|string|min:8|confirmed',
+            'password' => 'required|string|min:8|confirmed', 
             'role' => 'required|in:student,parent,tutor',
             'country' => 'nullable|string|max:100',
             'date_of_birth' => 'required_if:role,student|date',

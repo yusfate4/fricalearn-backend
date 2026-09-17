@@ -48,7 +48,8 @@ Route::post('/contact', [AuthController::class, 'handleContactForm']);
 Route::get('/ai/active-schedule', [AdminScheduleController::class, 'getActiveSchedule']);
 
 Route::prefix('auth')->group(function () {
-    Route::post('/register', [AuthController::class, 'register']);
+    // ── Rate limit: max 5 registration attempts per IP per minute ──
+    Route::middleware('throttle:5,1')->post('/register', [AuthController::class, 'register']);
     Route::post('/login', [AuthController::class, 'login']);
     Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
     Route::post('/reset-password', [AuthController::class, 'resetPassword']);
