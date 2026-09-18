@@ -32,7 +32,7 @@ class ExternalLessonController extends Controller
     // GET SINGLE LESSON — lazy fetch if not yet populated
     // =========================================================
 
-  public function show(Request $request, $id)
+public function show(Request $request, $id)
     {
         $lesson = ExternalLesson::with('topic.subject')->findOrFail($id);
 
@@ -40,14 +40,11 @@ class ExternalLessonController extends Controller
             $lesson = $this->fetchAndStoreOakContent($lesson);
         }
 
-        // --- NEW: Resolve the secure video URL on the fly ---
-        // We do this here so the React frontend gets a fresh, authenticated, playable MP4 URL 
-        // that hasn't expired.
+        $apiKey = $this->oakApiKey();
+
+        // --- Resolve the secure VIDEO URL on the fly ---
         if (!empty($lesson->video_url) && str_contains($lesson->video_url, 'thenational.academy')) {
             try {
-                $apiKey = $this->oakApiKey();
-                
-                // We use withoutRedirecting() just in case Oak sends a 302 directly to the MP4 file
                 $videoRes = Http::withoutRedirecting()->withHeaders([
                     'Authorization' => "Bearer {$apiKey}", 
                     'Accept' => 'application/json'
@@ -55,16 +52,37 @@ class ExternalLessonController extends Controller
 
                 $status = $videoRes->status();
 
-                // Check if it's a redirect (3xx status code)
                 if ($status >= 300 && $status < 400) {
                     $lesson->video_url = $videoRes->header('Location');
                 } elseif ($videoRes->successful()) {
-                    // It's a JSON response containing the signed URL
                     $vData = $videoRes->json();
                     $lesson->video_url = $vData['url'] ?? $vData['videoUrl'] ?? $vData['signedUrl'] ?? $vData['streamUrl'] ?? $lesson->video_url;
                 }
             } catch (\Exception $e) {
-                Log::error("Failed to resolve Oak video URL on the fly: " . $e->getMessage());
+                Log::error("Failed to resolve Oak video URL: " . $e->getMessage());
+            }
+        }
+
+        // --- NEW: Resolve the secure SLIDE DECK URL on the fly ---
+        if (!empty($lesson->slide_url) && str_contains($lesson->slide_url, 'thenational.academy')) {
+            try {
+                $slideRes = Http::withoutRedirecting()->withHeaders([
+                    'Authorization' => "Bearer {$apiKey}", 
+                    'Accept' => 'application/json'
+                ])->get($lesson->slide_url);
+
+                $status = $slideRes->status();
+
+                // Check if Oak redirects to a signed PDF/Slide file
+                if ($status >= 300 && $status < 400) {
+                    $lesson->slide_url = $slideRes->header('Location');
+                } elseif ($slideRes->successful()) {
+                    // Extract from JSON if they return a data object
+                    $sData = $slideRes->json();
+                    $lesson->slide_url = $sData['url'] ?? $sData['presentationUrl'] ?? $sData['slideDeckUrl'] ?? $lesson->slide_url;
+                }
+            } catch (\Exception $e) {
+                Log::error("Failed to resolve Oak slide URL: " . $e->getMessage());
             }
         }
 
@@ -82,7 +100,7 @@ class ExternalLessonController extends Controller
         ]);
     }
 
-    
+
     private function needsOakContent(ExternalLesson $lesson): bool
     {
         if (empty($lesson->external_id) || !empty($lesson->description)) return false;
