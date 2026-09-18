@@ -62,9 +62,9 @@ class ExternalLessonController extends Controller
 
     private function needsOakContent(ExternalLesson $lesson): bool
     {
-        return !empty($lesson->external_id)
-            && empty($lesson->description)
-            && $lesson->topic?->subject?->source === 'Oak National Academy';
+        if (empty($lesson->external_id) || !empty($lesson->description)) return false;
+        $subject = optional(optional($lesson->topic)->subject);
+        return $subject->source === 'Oak National Academy';
     }
 
     private function fetchAndStoreOakContent(ExternalLesson $lesson): ExternalLesson

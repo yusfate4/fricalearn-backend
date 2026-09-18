@@ -68,10 +68,9 @@ class ParentController extends Controller
             // Include selected_courses (stored as JSON on the user)
             $child->selected_courses   = $child->selected_courses;
             // Include external subjects enrolled
-            $child->external_subjects  = $child->externalSubjects->map(fn($s) => [
-                'id'   => $s->id,
-                'name' => $s->name,
-            ]);
+            $child->external_subjects  = $child->externalSubjects->map(function($s) {
+                return ['id' => $s->id, 'name' => $s->name];
+            });
             return $child;
         });
 
