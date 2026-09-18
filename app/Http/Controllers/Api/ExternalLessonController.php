@@ -265,7 +265,20 @@ class ExternalLessonController extends Controller
             return response()->json(['success' => false, 'message' => 'No quiz available.'], 422);
         }
 
-        $questions = isset($quizData[0]['question']) ? $quizData : ($quizData['questions'] ?? []);
+        // --- FIXED: Extract exit quiz from the new structured format ---
+        $questions = [];
+        if (isset($quizData['exit'])) {
+            $questions = $quizData['exit'];
+        } elseif (isset($quizData[0]['question'])) {
+            $questions = $quizData; // legacy flat array format
+        } else {
+            $questions = $quizData['questions'] ?? [];
+        }
+
+        if (empty($questions)) {
+            return response()->json(['success' => false, 'message' => 'No exit quiz questions available.'], 422);
+        }
+
         $answers   = $request->answers ?? [];
 
         $correct  = 0; $wrongIds = [];
