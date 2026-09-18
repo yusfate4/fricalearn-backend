@@ -25,14 +25,9 @@ class ExternalSubjectController extends Controller
             
             $subjects = $user->externalSubjects()
                             ->with(['topics.lessons' => function($query) use ($userId) {
-                                // For the index/list view: only load title+id, not full description
-                                // (description is 10,000 chars per lesson — loading all would be very slow)
-                                $query->where(function($q) {
-                                        $q->whereNotNull('description')
-                                          ->where('description', '!=', 'fetched')
-                                          ->whereRaw('CHAR_LENGTH(description) > 50');
-                                    })
-                                    ->select('id', 'topic_id', 'title', 'duration_minutes', 'order_index', 'quiz_data')
+                                // REMOVED THE DESCRIPTION FILTER HERE
+                                // We just select the basic fields so the list loads fast
+                                $query->select('id', 'topic_id', 'title', 'duration_minutes', 'order_index', 'quiz_data', 'description')
                                     ->with(['userProgress' => function($q) use ($userId) {
                                         $q->where('user_id', $userId)->select('user_id', 'lesson_id', 'status', 'quiz_score');
                                     }]);
@@ -66,15 +61,13 @@ class ExternalSubjectController extends Controller
             
             $subject = ExternalSubject::with(['topics' => function($query) use ($userId) {
                 $query->with(['lessons' => function($q) use ($userId) {
-                    // Only hide lessons with truly blank content
-                    $q->where(function($inner) {
-                            $inner->whereNotNull('description')
-                                  ->where('description', '!=', 'fetched')
-                                  ->whereRaw('CHAR_LENGTH(description) > 50');
-                        })
-                        ->with(['userProgress' => function($p) use ($userId) {
+                    
+                    // REMOVED THE DESCRIPTION FILTER HERE AS WELL!
+                    // Now all lessons will show up in the React accordion tabs.
+                    $q->with(['userProgress' => function($p) use ($userId) {
                             $p->where('user_id', $userId);
                         }]);
+                        
                 }])->orderBy('order_index');
             }])->findOrFail($id);
 
