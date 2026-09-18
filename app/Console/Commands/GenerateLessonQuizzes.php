@@ -11,6 +11,37 @@ class GenerateLessonQuizzes extends Command
     protected $signature   = 'oak:generate-quizzes {--limit=10} {--subject=}';
     protected $description = 'Generate AI quizzes for lessons that have a transcript but no quiz';
 
+    /**
+     * Strip all non-UTF-8-safe bytes from a string.
+     * Oak lesson titles contain curly quotes (U+2018/2019) that get
+     * stored as malformed sequences and cause json_encode to throw.
+     */
+    private function safeUtf8(string $str): string
+    {
+        // Convert to UTF-8, ignoring invalid bytes
+        $str = @iconv('UTF-8', 'UTF-8//IGNORE', $str);
+        // Strip control characters except tab/newline/CR
+        $str = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u', '', $str);
+        // Replace common typographic characters Oak uses
+        $map = [
+            '\xE2\x80\x98' => "'",  // U+2018 LEFT SINGLE QUOTATION MARK
+            '\xE2\x80\x99' => "'",  // U+2019 RIGHT SINGLE QUOTATION MARK
+            '\xE2\x80\x9C' => '"',  // U+201C LEFT DOUBLE QUOTATION MARK
+            '\xE2\x80\x9D' => '"',  // U+201D RIGHT DOUBLE QUOTATION MARK
+            '\xE2\x80\x93' => '-',  // U+2013 EN DASH
+            '\xE2\x80\x94' => '-',  // U+2014 EM DASH
+            '\xE2\x80\xA6' => '...', // U+2026 HORIZONTAL ELLIPSIS
+        ];
+        foreach ($map as $bytes => $replacement) {
+            $str = str_replace($bytes, $replacement, $str);
+        }
+        // Final safety: ensure the result is valid UTF-8
+        if (!mb_check_encoding($str, 'UTF-8')) {
+            $str = mb_convert_encoding($str, 'UTF-8', 'UTF-8');
+        }
+        return $str;
+    }
+
     public function handle(): int
     {
         $apiKey = env('OPENAI_API_KEY');
@@ -44,23 +75,18 @@ class GenerateLessonQuizzes extends Command
         $generated = 0;
 
         foreach ($lessons as $lesson) {
-            $this->line("Generating: {$lesson->title}");
+            // Sanitise all string fields immediately — Oak uses curly quotes
+            // and other non-ASCII bytes that make json_encode throw
+            $cleanTitle   = $this->safeUtf8($lesson->title);
+            $cleanContent = $this->safeUtf8(substr($lesson->description ?? '', 0, 3000));
+            $cleanSubject = $this->safeUtf8($lesson->subject_name ?? '');
 
-            // Sanitise title and content — Oak uses curly quotes and special chars
-            // that cause json_encode to throw "Malformed UTF-8 characters"
-            $cleanTitle   = mb_convert_encoding($lesson->title, 'UTF-8', 'UTF-8');
-            $cleanTitle   = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u', '', $cleanTitle);
-            $cleanTitle   = iconv('UTF-8', 'UTF-8//IGNORE', $cleanTitle);
-
-            $cleanContent = mb_convert_encoding($lesson->description, 'UTF-8', 'UTF-8');
-            $cleanContent = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u', '', $cleanContent);
-            $cleanContent = iconv('UTF-8', 'UTF-8//IGNORE', $cleanContent);
-            $cleanContent = substr($cleanContent, 0, 3000);
+            $this->line("Generating: {$cleanTitle}");
 
             $prompt = "You are creating a quiz for children based on this lesson.
 
 LESSON TITLE: {$cleanTitle}
-SUBJECT: {$lesson->subject_name}
+SUBJECT: {$cleanSubject}
 
 LESSON CONTENT:
 {$cleanContent}
@@ -128,10 +154,20 @@ The correct_answer must exactly match one of the options, and correct_index must
                 }
 
                 if (count($valid) >= 2) {
+                    // Sanitise AI response before saving
+                    $validClean = array_map(function ($q) {
+                        return [
+                            'question'       => $this->safeUtf8($q['question']),
+                            'options'        => array_map([$this, 'safeUtf8'], $q['options']),
+                            'correct_answer' => $this->safeUtf8($q['correct_answer']),
+                            'correct_index'  => $q['correct_index'],
+                            'explanation'    => isset($q['explanation']) ? $this->safeUtf8($q['explanation']) : null,
+                        ];
+                    }, $valid);
                     DB::table('external_lessons')
                         ->where('id', $lesson->id)
                         ->update([
-                            'quiz_data'  => json_encode($valid, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                            'quiz_data'  => json_encode($validClean, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
                             'updated_at' => now(),
                         ]);
                     $generated++;
