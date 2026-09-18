@@ -45,44 +45,54 @@ public function show(Request $request, $id)
         // --- Resolve the secure VIDEO URL on the fly ---
         if (!empty($lesson->video_url) && str_contains($lesson->video_url, 'thenational.academy')) {
             try {
-                $videoRes = Http::withoutRedirecting()->withHeaders([
-                    'Authorization' => "Bearer {$apiKey}", 
-                    'Accept' => 'application/json'
-                ])->get($lesson->video_url);
+                $videoRes = Http::withoutRedirecting()
+                                ->withToken($apiKey)
+                                ->get($lesson->video_url);
 
                 $status = $videoRes->status();
 
                 if ($status >= 300 && $status < 400) {
                     $lesson->video_url = $videoRes->header('Location');
-                } elseif ($videoRes->successful()) {
+                } elseif ($status == 200) {
                     $vData = $videoRes->json();
-                    $lesson->video_url = $vData['url'] ?? $vData['videoUrl'] ?? $vData['signedUrl'] ?? $vData['streamUrl'] ?? $lesson->video_url;
+                    $lesson->video_url = $vData['url'] ?? $vData['videoUrl'] ?? $vData['signedUrl'] ?? $vData['streamUrl'] ?? null;
+                } else {
+                    // Oak returned 404 or an error — safely hide the video
+                    $lesson->video_url = null; 
                 }
             } catch (\Exception $e) {
                 Log::error("Failed to resolve Oak video URL: " . $e->getMessage());
+                $lesson->video_url = null;
             }
         }
 
-        // --- NEW: Resolve the secure SLIDE DECK URL on the fly ---
+        // --- Resolve the secure SLIDE DECK URL on the fly ---
         if (!empty($lesson->slide_url) && str_contains($lesson->slide_url, 'thenational.academy')) {
             try {
-                $slideRes = Http::withoutRedirecting()->withHeaders([
-                    'Authorization' => "Bearer {$apiKey}", 
-                    'Accept' => 'application/json'
-                ])->get($lesson->slide_url);
+                // We deliberately omit the 'Accept: application/json' header here 
+                // to prevent 406 Not Acceptable errors if Oak returns a binary stream.
+                $slideRes = Http::withoutRedirecting()
+                                ->withToken($apiKey)
+                                ->get($lesson->slide_url);
 
                 $status = $slideRes->status();
 
-                // Check if Oak redirects to a signed PDF/Slide file
                 if ($status >= 300 && $status < 400) {
                     $lesson->slide_url = $slideRes->header('Location');
-                } elseif ($slideRes->successful()) {
-                    // Extract from JSON if they return a data object
+                } elseif ($status == 200) {
                     $sData = $slideRes->json();
-                    $lesson->slide_url = $sData['url'] ?? $sData['presentationUrl'] ?? $sData['slideDeckUrl'] ?? $lesson->slide_url;
+                    if ($sData) {
+                        $lesson->slide_url = $sData['url'] ?? $sData['presentationUrl'] ?? $sData['slideDeckUrl'] ?? null;
+                    } else {
+                        $lesson->slide_url = null;
+                    }
+                } else {
+                    // Oak returned 404 or an error — safely hide the slide deck
+                    $lesson->slide_url = null; 
                 }
             } catch (\Exception $e) {
                 Log::error("Failed to resolve Oak slide URL: " . $e->getMessage());
+                $lesson->slide_url = null;
             }
         }
 
@@ -99,7 +109,6 @@ public function show(Request $request, $id)
             'progress' => $progress,
         ]);
     }
-
 
     private function needsOakContent(ExternalLesson $lesson): bool
     {
