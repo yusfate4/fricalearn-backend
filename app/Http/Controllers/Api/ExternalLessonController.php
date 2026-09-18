@@ -32,7 +32,7 @@ class ExternalLessonController extends Controller
     // GET SINGLE LESSON — lazy fetch if not yet populated
     // =========================================================
 
-    public function show(Request $request, $id)
+  public function show(Request $request, $id)
     {
         $lesson = ExternalLesson::with('topic.subject')->findOrFail($id);
 
@@ -53,8 +53,10 @@ class ExternalLessonController extends Controller
                     'Accept' => 'application/json'
                 ])->get($lesson->video_url);
 
-                if ($videoRes->isRedirect()) {
-                    // It's a direct redirect to the Google Cloud MP4
+                $status = $videoRes->status();
+
+                // Check if it's a redirect (3xx status code)
+                if ($status >= 300 && $status < 400) {
                     $lesson->video_url = $videoRes->header('Location');
                 } elseif ($videoRes->successful()) {
                     // It's a JSON response containing the signed URL
@@ -80,6 +82,7 @@ class ExternalLessonController extends Controller
         ]);
     }
 
+    
     private function needsOakContent(ExternalLesson $lesson): bool
     {
         if (empty($lesson->external_id) || !empty($lesson->description)) return false;
