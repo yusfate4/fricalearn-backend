@@ -25,14 +25,16 @@ class ExternalSubjectController extends Controller
             
             $subjects = $user->externalSubjects()
                             ->with(['topics.lessons' => function($query) use ($userId) {
-                                // Only hide lessons with truly blank content
+                                // For the index/list view: only load title+id, not full description
+                                // (description is 10,000 chars per lesson — loading all would be very slow)
                                 $query->where(function($q) {
                                         $q->whereNotNull('description')
                                           ->where('description', '!=', 'fetched')
                                           ->whereRaw('CHAR_LENGTH(description) > 50');
                                     })
+                                    ->select('id', 'topic_id', 'title', 'duration_minutes', 'order_index', 'quiz_data')
                                     ->with(['userProgress' => function($q) use ($userId) {
-                                        $q->where('user_id', $userId);
+                                        $q->where('user_id', $userId)->select('user_id', 'lesson_id', 'status', 'quiz_score');
                                     }]);
                             }])
                             ->get();
