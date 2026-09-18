@@ -92,6 +92,9 @@ The correct_answer must exactly match one of the options, and correct_index must
                 $raw = trim($response->choices[0]->message->content);
                 // Strip markdown fences if the model added them
                 $raw = preg_replace('/^```json\s*|\s*```$/', '', $raw);
+                // Ensure valid UTF-8 before decoding (some Oak content has encoding issues)
+                $raw = mb_convert_encoding($raw, 'UTF-8', 'UTF-8');
+                $raw = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', '', $raw);
 
                 $questions = json_decode($raw, true);
 
@@ -120,7 +123,7 @@ The correct_answer must exactly match one of the options, and correct_index must
                     DB::table('external_lessons')
                         ->where('id', $lesson->id)
                         ->update([
-                            'quiz_data'  => json_encode($valid),
+                            'quiz_data'  => json_encode($valid, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
                             'updated_at' => now(),
                         ]);
                     $generated++;

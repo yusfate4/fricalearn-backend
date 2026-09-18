@@ -55,15 +55,15 @@ class GenerateLessonContent extends Command
 
             $pointsText   = $points ? "- " . implode("\n- ", $points) : "(none provided)";
             $keywordsText = $keywords
-                ? implode("\n", array_map(fn($k) => "- {$k['keyword']}: {$k['description']}", $keywords))
+                ? implode("\n", array_map(function($k) { return "- " . $k['keyword'] . ": " . $k['description']; }, $keywords))
                 : "(none provided)";
 
-            $ageGuide = match ($lesson->key_stage) {
-                'KS1'   => 'ages 5-7 (very simple sentences, short paragraphs)',
-                'KS2'   => 'ages 7-11 (clear, friendly language)',
-                'KS3'   => 'ages 11-14',
-                default => 'ages 14-16 (GCSE level)',
-            };
+            $ageGuideMap = [
+                'KS1' => 'ages 5-7 (very simple sentences, short paragraphs)',
+                'KS2' => 'ages 7-11 (clear, friendly language)',
+                'KS3' => 'ages 11-14',
+            ];
+            $ageGuide = $ageGuideMap[$lesson->key_stage] ?? 'ages 14-16 (GCSE level)';
 
             $prompt = "Write an educational reading lesson for a child, {$ageGuide}.
 

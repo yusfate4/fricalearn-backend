@@ -83,9 +83,9 @@ class ExternalLessonController extends Controller
             if ($summaryRes->successful()) {
                 $s = $summaryRes->json();
                 $metadata['outcome']        = $s['pupilLessonOutcome'] ?? null;
-                $metadata['key_points']     = array_values(array_filter(array_map(fn($p) => $p['keyLearningPoint'] ?? null, $s['keyLearningPoints'] ?? [])));
-                $metadata['keywords']       = array_map(fn($kw) => ['keyword' => $kw['keyword'] ?? '', 'description' => $kw['description'] ?? ''], $s['lessonKeywords'] ?? []);
-                $metadata['misconceptions'] = array_map(fn($m) => ['misconception' => $m['misconception'] ?? '', 'response' => $m['response'] ?? ''], $s['misconceptionsAndCommonMistakes'] ?? []);
+                $metadata['key_points']     = array_values(array_filter(array_map(function(\$p) { return isset(\$p['keyLearningPoint']) ? \$p['keyLearningPoint'] : null; }, \$s['keyLearningPoints'] ?? [])));
+                $metadata['keywords']       = array_map(function(\$kw) { return ['keyword' => isset(\$kw['keyword']) ? \$kw['keyword'] : '', 'description' => isset(\$kw['description']) ? \$kw['description'] : '']; }, \$s['lessonKeywords'] ?? []);
+                $metadata['misconceptions'] = array_map(function($m) { return ['misconception' => isset($m['misconception']) ? $m['misconception'] : '', 'response' => isset($m['response']) ? $m['response'] : '']; }, $s['misconceptionsAndCommonMistakes'] ?? []);
             }
 
             $updates['worksheet_url'] = json_encode($metadata);
