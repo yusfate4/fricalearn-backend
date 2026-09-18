@@ -141,14 +141,22 @@ class ExternalLessonController extends Controller
                 $updates['description'] = $metadata['outcome'] ?? 'fetched';
             }
 
-            // ── Quiz ──────────────────────────────────────────
+          // ── Quiz (Starter & Exit) ─────────────────────────
             $quizRes = Http::withHeaders([
                 'Authorization' => "Bearer {$apiKey}", 'Accept' => 'application/json',
             ])->timeout(20)->get("{$apiUrl}/lessons/{$slug}/quiz");
 
             if ($quizRes->successful()) {
-                $questions = $this->normaliseOakQuiz($quizRes->json());
-                if (!empty($questions)) $updates['quiz_data'] = json_encode($questions);
+                $rawQuiz = $quizRes->json();
+                
+                // Normalise both starter and exit quizzes
+                $starterQuestions = $this->normaliseOakQuizData($rawQuiz['starterQuiz'] ?? []);
+                $exitQuestions    = $this->normaliseOakQuizData($rawQuiz['exitQuiz'] ?? []);
+
+                $updates['quiz_data'] = json_encode([
+                    'starter' => $starterQuestions,
+                    'exit'    => $exitQuestions,
+                ]);
             }
 
             // ── Assets (Video, Slides, Worksheets) ────────────
@@ -193,10 +201,9 @@ class ExternalLessonController extends Controller
         return ExternalLesson::with('topic.subject')->find($lesson->id);
     }
 
-    private function normaliseOakQuiz(array $raw): array
+ private function normaliseOakQuizData(array $source): array
     {
         $questions = [];
-        $source    = !empty($raw['exitQuiz']) ? $raw['exitQuiz'] : ($raw['starterQuiz'] ?? []);
 
         foreach ($source as $q) {
             $questionText = $q['question'] ?? null;
