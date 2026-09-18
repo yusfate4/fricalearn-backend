@@ -288,65 +288,28 @@ class OnboardingController extends Controller
             // 5. Auto-enroll student in selected courses
             foreach ($validated['selected_courses'] as $courseId) {
                 if ($courseId === 'maths' || $courseId === 'english') {
-                    // UK Curriculum subjects - create ExternalSubject enrollment
-                    $subjectName = $courseId === 'maths' ? 'Mathematics' : 'English';
-                    $grade = $courseId === 'maths' ? ($validated['maths_grade'] ?? null) : ($validated['english_grade'] ?? null);
-                    
+                    // ── Enrol in the correct Oak subject (IDs 39-47) ──────────
+                    // These are the subjects that have all 4,788 Oak lessons.
+                    // Map: grade → Oak subject ID
+                    $grade = $courseId === 'maths'
+                        ? ($validated['maths_grade'] ?? null)
+                        : ($validated['english_grade'] ?? null);
+
+                    // Oak subject ID map: [maths_grade => subject_id, english_grade => subject_id]
+                    // Subjects 39-47 are the canonical Oak KS1-KS4 subjects with full content
+                    $oakSubjectMap = $courseId === 'maths'
+                        ? [1=>39, 2=>39, 3=>41, 4=>41, 5=>41, 6=>41, 7=>44, 8=>44, 9=>44, 10=>46, 11=>46, 12=>46, 13=>46]
+                        : [1=>40, 2=>40, 3=>42, 4=>42, 5=>42, 6=>42, 7=>45, 8=>45, 9=>45, 10=>47, 11=>47, 12=>47, 13=>47];
+
                     if ($grade) {
-                        // Calculate Key Stage based on year
-                        if ($grade <= 2) {
-                            $keyStage = 1;
-                        } elseif ($grade <= 6) {
-                            $keyStage = 2;
-                        } elseif ($grade <= 9) {
-                            $keyStage = 3;
-                        } else {
-                            $keyStage = 4;
-                        }
-                        
-                        // Find or create the external subject (EXACT match to avoid Year 1 matching Year 10!)
-                        $fullSubjectName = "{$subjectName} Year {$grade}";
-                        $externalSubject = DB::table('external_subjects')
-                            ->where('name', '=', $fullSubjectName)  // EXACT match, not LIKE!
-                            ->first();
-                        
-                        // Log for debugging
-                        \Log::info('Onboarding: Looking for external subject', [
-                            'searching_for' => $fullSubjectName,
-                            'found' => $externalSubject ? 'YES' : 'NO',
-                            'child_id' => $child->id ?? 'unknown',
-                            'grade_selected' => $grade
+                        $subjectId = $oakSubjectMap[(int)$grade] ?? ($courseId === 'maths' ? 44 : 45);
+
+                        \Log::info('Onboarding: Enrolling in Oak subject', [
+                            'student_id' => $child->id,
+                            'course'     => $courseId,
+                            'grade'      => $grade,
+                            'subject_id' => $subjectId,
                         ]);
-                        
-                        if (!$externalSubject) {
-                            // Subject doesn't exist - create it OR log error
-                            \Log::warning('Onboarding: External subject not found, attempting to create', [
-                                'subject_name' => $fullSubjectName,
-                                'grade' => $grade,
-                                'key_stage' => $keyStage
-                            ]);
-                            
-                            // Create it if it doesn't exist
-                            $subjectId = DB::table('external_subjects')->insertGetId([
-                                'name' => $fullSubjectName,
-                                'key_stage' => (string)$keyStage,
-                                'year_group' => $grade,
-                                'source' => 'UK National Curriculum',
-                                'created_at' => now(),
-                                'updated_at' => now(),
-                            ]);
-                            
-                            \Log::info('Onboarding: Created new external subject', [
-                                'subject_id' => $subjectId,
-                                'name' => $fullSubjectName
-                            ]);
-                        } else {
-                            $subjectId = $externalSubject->id;
-                            \Log::info('Onboarding: Using existing external subject', [
-                                'subject_id' => $subjectId,
-                                'name' => $externalSubject->name
-                            ]);
-                        }
                         
                         // Enroll the student in the external subject
                         DB::table('user_external_subject_enrollments')->insert([
