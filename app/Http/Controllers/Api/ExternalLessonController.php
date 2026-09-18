@@ -20,17 +20,14 @@ class ExternalLessonController extends Controller
     // GET ALL LESSONS FOR A TOPIC
     // =========================================================
 
-    public function indexByTopic($topicId)
+ public function indexByTopic($topicId)
     {
         $topic = ExternalTopic::with(['lessons' => function ($q) {
-            // Only hide lessons with truly blank content (not grade-based)
-            $q->where(function($inner) {
-                    $inner->whereNotNull('description')
-                          ->where('description', '!=', 'fetched')
-                          ->whereRaw('CHAR_LENGTH(description) > 50');
-                })
-              ->orderBy('order_index');
+            // Remove the 'description' filter so lessons show up 
+            // and can be clicked to trigger the lazy-fetch!
+            $q->orderBy('order_index');
         }])->findOrFail($topicId);
+        
         return response()->json(['success' => true, 'topic' => $topic]);
     }
 
