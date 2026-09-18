@@ -118,9 +118,35 @@ class ExternalLessonController extends Controller
                 if (!empty($questions)) $updates['quiz_data'] = json_encode($questions);
             }
 
-            // No video or external links
-            $updates['video_url'] = null;
-            $updates['slide_url'] = null;
+            // ── Assets (Video & Slides) ───────────────────────
+            $assetsRes = Http::withHeaders([
+                'Authorization' => "Bearer {$apiKey}", 'Accept' => 'application/json',
+            ])->timeout(20)->get("{$apiUrl}/lessons/{$slug}/assets");
+
+            if ($assetsRes->successful()) {
+                $assetsData = $assetsRes->json();
+                
+                // Oak API structure varies slightly, so we check the most common keys for the video URL
+                $videoUrl = $assetsData['videoUrl'] 
+                         ?? $assetsData['videoObject']['contentUrl'] 
+                         ?? $assetsData['videoObject']['embedUrl'] 
+                         ?? $assetsData['video']['url'] 
+                         ?? null;
+                
+                // If it's a direct string URL, save it. Otherwise, save the raw JSON so React can parse it.
+                if (!$videoUrl && !empty($assetsData)) {
+                    $updates['video_url'] = json_encode($assetsData);
+                } else {
+                    $updates['video_url'] = $videoUrl;
+                }
+                
+                // Try to grab the slide deck URL if available
+                $slideUrl = $assetsData['slideDeckUrl'] ?? $assetsData['presentationUrl'] ?? null;
+                $updates['slide_url'] = is_string($slideUrl) ? $slideUrl : null;
+            } else {
+                $updates['video_url'] = null;
+                $updates['slide_url'] = null;
+            }
 
         } catch (\Exception $e) {
             Log::error("Oak fetch error for {$slug}: " . $e->getMessage());
