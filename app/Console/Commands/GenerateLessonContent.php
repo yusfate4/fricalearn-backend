@@ -47,6 +47,11 @@ class GenerateLessonContent extends Command
         foreach ($lessons as $lesson) {
             $this->line("Generating: {$lesson->title}");
 
+            // Sanitise lesson title — Oak uses curly quotes and special chars
+            $lesson->title = iconv('UTF-8', 'UTF-8//IGNORE',
+                mb_convert_encoding($lesson->title, 'UTF-8', 'UTF-8')
+            );
+
             // Pull whatever metadata Oak gave us
             $meta = json_decode($lesson->worksheet_url ?? '{}', true) ?: [];
             $outcome  = $meta['outcome'] ?? ($lesson->description !== 'fetched' ? $lesson->description : null);

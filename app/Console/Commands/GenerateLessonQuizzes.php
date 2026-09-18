@@ -46,16 +46,24 @@ class GenerateLessonQuizzes extends Command
         foreach ($lessons as $lesson) {
             $this->line("Generating: {$lesson->title}");
 
-            // Use first 3000 chars of transcript (enough context, cheap tokens)
-            $content = substr($lesson->description, 0, 3000);
+            // Sanitise title and content — Oak uses curly quotes and special chars
+            // that cause json_encode to throw "Malformed UTF-8 characters"
+            $cleanTitle   = mb_convert_encoding($lesson->title, 'UTF-8', 'UTF-8');
+            $cleanTitle   = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u', '', $cleanTitle);
+            $cleanTitle   = iconv('UTF-8', 'UTF-8//IGNORE', $cleanTitle);
+
+            $cleanContent = mb_convert_encoding($lesson->description, 'UTF-8', 'UTF-8');
+            $cleanContent = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u', '', $cleanContent);
+            $cleanContent = iconv('UTF-8', 'UTF-8//IGNORE', $cleanContent);
+            $cleanContent = substr($cleanContent, 0, 3000);
 
             $prompt = "You are creating a quiz for children based on this lesson.
 
-LESSON TITLE: {$lesson->title}
+LESSON TITLE: {$cleanTitle}
 SUBJECT: {$lesson->subject_name}
 
 LESSON CONTENT:
-{$content}
+{$cleanContent}
 
 Create exactly 4 multiple-choice questions testing understanding of THIS lesson's content.
 
