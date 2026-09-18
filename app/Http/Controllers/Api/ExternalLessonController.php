@@ -120,30 +120,32 @@ class ExternalLessonController extends Controller
                 'Authorization' => "Bearer {$apiKey}", 'Accept' => 'application/json',
             ])->timeout(20)->get("{$apiUrl}/lessons/{$slug}/assets");
 
+            $videoUrlToSave = null;
+            $slideUrlToSave = null;
+
             if ($assetsRes->successful()) {
                 $assetsData = $assetsRes->json();
                 
-                // Oak API structure varies slightly, so we check the most common keys for the video URL
-                $videoUrl = $assetsData['videoUrl'] 
-                         ?? $assetsData['videoObject']['contentUrl'] 
-                         ?? $assetsData['videoObject']['embedUrl'] 
-                         ?? $assetsData['video']['url'] 
-                         ?? null;
-                
-                // If it's a direct string URL, save it. Otherwise, save the raw JSON so React can parse it.
-                if (!$videoUrl && !empty($assetsData)) {
-                    $updates['video_url'] = json_encode($assetsData);
-                } else {
-                    $updates['video_url'] = $videoUrl;
+                // Oak returns an array of objects for assets. We need to loop through and find the video URL.
+                if (isset($assetsData['assets']) && is_array($assetsData['assets'])) {
+                    foreach ($assetsData['assets'] as $asset) {
+                        if (isset($asset['type']) && $asset['type'] === 'video' && isset($asset['url'])) {
+                            $videoUrlToSave = $asset['url'];
+                        }
+                        if (isset($asset['type']) && $asset['type'] === 'slideDeck' && isset($asset['url'])) {
+                            $slideUrlToSave = $asset['url'];
+                        }
+                    }
+                } 
+                // Fallback for older Oak API structures
+                else {
+                    $videoUrlToSave = $assetsData['videoUrl'] ?? $assetsData['videoObject']['contentUrl'] ?? $assetsData['video']['url'] ?? null;
                 }
-                
-                // Try to grab the slide deck URL if available
-                $slideUrl = $assetsData['slideDeckUrl'] ?? $assetsData['presentationUrl'] ?? null;
-                $updates['slide_url'] = is_string($slideUrl) ? $slideUrl : null;
-            } else {
-                $updates['video_url'] = null;
-                $updates['slide_url'] = null;
             }
+            
+            // Limit the length to 255 chars just to be absolutely safe from SQL errors
+            $updates['video_url'] = $videoUrlToSave ? substr($videoUrlToSave, 0, 255) : null;
+            $updates['slide_url'] = $slideUrlToSave ? substr($slideUrlToSave, 0, 255) : null;
 
         } catch (\Exception $e) {
             Log::error("Oak fetch error for {$slug}: " . $e->getMessage());
@@ -154,6 +156,7 @@ class ExternalLessonController extends Controller
         return ExternalLesson::with('topic.subject')->find($lesson->id);
     }
 
+    
     private function normaliseOakQuiz(array $raw): array
     {
         $questions = [];
