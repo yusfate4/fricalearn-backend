@@ -16,6 +16,29 @@ class ExternalLessonController extends Controller
     private function oakApiUrl(): string { return rtrim(config('services.oak.api_url'), '/'); }
     private function oakApiKey(): string { return config('services.oak.api_key'); }
 
+    /**
+     * Helper to securely resolve and unlock Oak Academy signed/redirect URLs on the fly
+     */
+    private function resolveOakUrl(?string $url, string $apiKey): ?string
+    {
+        if (empty($url) || !str_contains($url, 'thenational.academy')) return $url;
+        try {
+            // We omit Accept: application/json to prevent 406 errors on binary streams (like PDFs)
+            $res = Http::withoutRedirecting()->withToken($apiKey)->get($url);
+            $status = $res->status();
+
+            if ($status >= 300 && $status < 400) {
+                return $res->header('Location');
+            } elseif ($status === 200) {
+                $data = $res->json();
+                return $data['url'] ?? $data['fileUrl'] ?? $data['presentationUrl'] ?? $data['videoUrl'] ?? $data['signedUrl'] ?? null;
+            }
+        } catch (\Exception $e) {
+            Log::error("Oak URL resolution failed: " . $e->getMessage());
+        }
+        return null;
+    }
+
     // =========================================================
     // GET ALL LESSONS FOR A TOPIC
     // =========================================================
@@ -32,7 +55,7 @@ class ExternalLessonController extends Controller
     // GET SINGLE LESSON — lazy fetch if not yet populated
     // =========================================================
 
-public function show(Request $request, $id)
+    public function show(Request $request, $id)
     {
         $lesson = ExternalLesson::with('topic.subject')->findOrFail($id);
 
@@ -42,58 +65,20 @@ public function show(Request $request, $id)
 
         $apiKey = $this->oakApiKey();
 
-        // --- Resolve the secure VIDEO URL on the fly ---
-        if (!empty($lesson->video_url) && str_contains($lesson->video_url, 'thenational.academy')) {
-            try {
-                $videoRes = Http::withoutRedirecting()
-                                ->withToken($apiKey)
-                                ->get($lesson->video_url);
+        // 1. Resolve Media URLs on the fly
+        $lesson->video_url = $this->resolveOakUrl($lesson->video_url, $apiKey);
+        $lesson->slide_url = $this->resolveOakUrl($lesson->slide_url, $apiKey);
 
-                $status = $videoRes->status();
-
-                if ($status >= 300 && $status < 400) {
-                    $lesson->video_url = $videoRes->header('Location');
-                } elseif ($status == 200) {
-                    $vData = $videoRes->json();
-                    $lesson->video_url = $vData['url'] ?? $vData['videoUrl'] ?? $vData['signedUrl'] ?? $vData['streamUrl'] ?? null;
-                } else {
-                    // Oak returned 404 or an error — safely hide the video
-                    $lesson->video_url = null; 
-                }
-            } catch (\Exception $e) {
-                Log::error("Failed to resolve Oak video URL: " . $e->getMessage());
-                $lesson->video_url = null;
+        // 2. Resolve Worksheet PDFs hidden inside the metadata JSON
+        $metadata = json_decode($lesson->worksheet_url, true);
+        if (is_array($metadata)) {
+            if (!empty($metadata['worksheet_pdf'])) {
+                $metadata['worksheet_pdf'] = $this->resolveOakUrl($metadata['worksheet_pdf'], $apiKey);
             }
-        }
-
-        // --- Resolve the secure SLIDE DECK URL on the fly ---
-        if (!empty($lesson->slide_url) && str_contains($lesson->slide_url, 'thenational.academy')) {
-            try {
-                // We deliberately omit the 'Accept: application/json' header here 
-                // to prevent 406 Not Acceptable errors if Oak returns a binary stream.
-                $slideRes = Http::withoutRedirecting()
-                                ->withToken($apiKey)
-                                ->get($lesson->slide_url);
-
-                $status = $slideRes->status();
-
-                if ($status >= 300 && $status < 400) {
-                    $lesson->slide_url = $slideRes->header('Location');
-                } elseif ($status == 200) {
-                    $sData = $slideRes->json();
-                    if ($sData) {
-                        $lesson->slide_url = $sData['url'] ?? $sData['presentationUrl'] ?? $sData['slideDeckUrl'] ?? null;
-                    } else {
-                        $lesson->slide_url = null;
-                    }
-                } else {
-                    // Oak returned 404 or an error — safely hide the slide deck
-                    $lesson->slide_url = null; 
-                }
-            } catch (\Exception $e) {
-                Log::error("Failed to resolve Oak slide URL: " . $e->getMessage());
-                $lesson->slide_url = null;
+            if (!empty($metadata['worksheet_answers_pdf'])) {
+                $metadata['worksheet_answers_pdf'] = $this->resolveOakUrl($metadata['worksheet_answers_pdf'], $apiKey);
             }
+            $lesson->worksheet_url = json_encode($metadata);
         }
 
         // Use student_id if provided (parent impersonating child)
@@ -142,8 +127,6 @@ public function show(Request $request, $id)
                 $metadata['misconceptions'] = array_map(function($m) { return ['misconception' => isset($m['misconception']) ? $m['misconception'] : '', 'response' => isset($m['response']) ? $m['response'] : '']; }, $s['misconceptionsAndCommonMistakes'] ?? []);
             }
 
-            $updates['worksheet_url'] = json_encode($metadata);
-
             // ── Transcript ────────────────────────────────────
             $transcriptRes = Http::withHeaders([
                 'Authorization' => "Bearer {$apiKey}", 'Accept' => 'application/json',
@@ -168,37 +151,38 @@ public function show(Request $request, $id)
                 if (!empty($questions)) $updates['quiz_data'] = json_encode($questions);
             }
 
-            // ── Assets (Video & Slides) ───────────────────────
+            // ── Assets (Video, Slides, Worksheets) ────────────
             $assetsRes = Http::withHeaders([
                 'Authorization' => "Bearer {$apiKey}", 'Accept' => 'application/json',
             ])->timeout(20)->get("{$apiUrl}/lessons/{$slug}/assets");
 
-            $videoUrlToSave = null;
-            $slideUrlToSave = null;
+            $videoUrlToSave      = null;
+            $slideUrlToSave      = null;
+            $worksheetUrl        = null;
+            $worksheetAnswersUrl = null;
 
             if ($assetsRes->successful()) {
                 $assetsData = $assetsRes->json();
                 
-                // Safely find the video API url
                 if (isset($assetsData['assets']) && is_array($assetsData['assets'])) {
                     foreach ($assetsData['assets'] as $asset) {
-                        if (isset($asset['type']) && $asset['type'] === 'video' && isset($asset['url'])) {
-                            $videoUrlToSave = $asset['url'];
-                        }
-                        if (isset($asset['type']) && $asset['type'] === 'slideDeck' && isset($asset['url'])) {
-                            $slideUrlToSave = $asset['url'];
-                        }
+                        $type = $asset['type'] ?? '';
+                        $url  = $asset['url'] ?? null;
+                        
+                        if ($type === 'video') $videoUrlToSave = $url;
+                        if ($type === 'slideDeck') $slideUrlToSave = $url;
+                        if ($type === 'worksheet') $worksheetUrl = $url;
+                        if ($type === 'worksheetAnswers') $worksheetAnswersUrl = $url;
                     }
-                } 
-                // Fallback for older Oak API formats
-                else {
-                    $videoUrlToSave = $assetsData['videoUrl'] ?? $assetsData['videoObject']['contentUrl'] ?? null;
                 }
             }
             
-            // Limit to 255 chars to prevent SQL Data Too Long errors
             $updates['video_url'] = $videoUrlToSave ? substr($videoUrlToSave, 0, 255) : null;
             $updates['slide_url'] = $slideUrlToSave ? substr($slideUrlToSave, 0, 255) : null;
+            
+            $metadata['worksheet_pdf'] = $worksheetUrl;
+            $metadata['worksheet_answers_pdf'] = $worksheetAnswersUrl;
+            $updates['worksheet_url'] = json_encode($metadata);
 
         } catch (\Exception $e) {
             Log::error("Oak fetch error for {$slug}: " . $e->getMessage());
