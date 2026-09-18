@@ -25,8 +25,12 @@ class ExternalSubjectController extends Controller
             
             $subjects = $user->externalSubjects()
                             ->with(['topics.lessons' => function($query) use ($userId) {
-                                $query->whereNotNull('grade_level') // hide null-grade (blank) lessons
-                                    ->where('grade_level', '>', 0)
+                                // Only hide lessons with truly blank content
+                                $query->where(function($q) {
+                                        $q->whereNotNull('description')
+                                          ->where('description', '!=', 'fetched')
+                                          ->whereRaw('CHAR_LENGTH(description) > 50');
+                                    })
                                     ->with(['userProgress' => function($q) use ($userId) {
                                         $q->where('user_id', $userId);
                                     }]);
@@ -60,8 +64,12 @@ class ExternalSubjectController extends Controller
             
             $subject = ExternalSubject::with(['topics' => function($query) use ($userId) {
                 $query->with(['lessons' => function($q) use ($userId) {
-                    $q->whereNotNull('grade_level') // hide null-grade (blank) lessons
-                        ->where('grade_level', '>', 0)
+                    // Only hide lessons with truly blank content
+                    $q->where(function($inner) {
+                            $inner->whereNotNull('description')
+                                  ->where('description', '!=', 'fetched')
+                                  ->whereRaw('CHAR_LENGTH(description) > 50');
+                        })
                         ->with(['userProgress' => function($p) use ($userId) {
                             $p->where('user_id', $userId);
                         }]);
