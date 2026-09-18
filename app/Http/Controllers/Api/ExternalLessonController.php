@@ -20,14 +20,11 @@ class ExternalLessonController extends Controller
     // GET ALL LESSONS FOR A TOPIC
     // =========================================================
 
- public function indexByTopic($topicId)
+    public function indexByTopic($topicId)
     {
         $topic = ExternalTopic::with(['lessons' => function ($q) {
-            // Remove the 'description' filter so lessons show up 
-            // and can be clicked to trigger the lazy-fetch!
             $q->orderBy('order_index');
         }])->findOrFail($topicId);
-        
         return response()->json(['success' => true, 'topic' => $topic]);
     }
 
@@ -41,6 +38,32 @@ class ExternalLessonController extends Controller
 
         if ($this->needsOakContent($lesson)) {
             $lesson = $this->fetchAndStoreOakContent($lesson);
+        }
+
+        // --- NEW: Resolve the secure video URL on the fly ---
+        // We do this here so the React frontend gets a fresh, authenticated, playable MP4 URL 
+        // that hasn't expired.
+        if (!empty($lesson->video_url) && str_contains($lesson->video_url, 'thenational.academy')) {
+            try {
+                $apiKey = $this->oakApiKey();
+                
+                // We use withoutRedirecting() just in case Oak sends a 302 directly to the MP4 file
+                $videoRes = Http::withoutRedirecting()->withHeaders([
+                    'Authorization' => "Bearer {$apiKey}", 
+                    'Accept' => 'application/json'
+                ])->get($lesson->video_url);
+
+                if ($videoRes->isRedirect()) {
+                    // It's a direct redirect to the Google Cloud MP4
+                    $lesson->video_url = $videoRes->header('Location');
+                } elseif ($videoRes->successful()) {
+                    // It's a JSON response containing the signed URL
+                    $vData = $videoRes->json();
+                    $lesson->video_url = $vData['url'] ?? $vData['videoUrl'] ?? $vData['signedUrl'] ?? $vData['streamUrl'] ?? $lesson->video_url;
+                }
+            } catch (\Exception $e) {
+                Log::error("Failed to resolve Oak video URL on the fly: " . $e->getMessage());
+            }
         }
 
         // Use student_id if provided (parent impersonating child)
@@ -126,7 +149,7 @@ class ExternalLessonController extends Controller
             if ($assetsRes->successful()) {
                 $assetsData = $assetsRes->json();
                 
-                // Oak returns an array of objects for assets. We need to loop through and find the video URL.
+                // Safely find the video API url
                 if (isset($assetsData['assets']) && is_array($assetsData['assets'])) {
                     foreach ($assetsData['assets'] as $asset) {
                         if (isset($asset['type']) && $asset['type'] === 'video' && isset($asset['url'])) {
@@ -137,13 +160,13 @@ class ExternalLessonController extends Controller
                         }
                     }
                 } 
-                // Fallback for older Oak API structures
+                // Fallback for older Oak API formats
                 else {
-                    $videoUrlToSave = $assetsData['videoUrl'] ?? $assetsData['videoObject']['contentUrl'] ?? $assetsData['video']['url'] ?? null;
+                    $videoUrlToSave = $assetsData['videoUrl'] ?? $assetsData['videoObject']['contentUrl'] ?? null;
                 }
             }
             
-            // Limit the length to 255 chars just to be absolutely safe from SQL errors
+            // Limit to 255 chars to prevent SQL Data Too Long errors
             $updates['video_url'] = $videoUrlToSave ? substr($videoUrlToSave, 0, 255) : null;
             $updates['slide_url'] = $slideUrlToSave ? substr($slideUrlToSave, 0, 255) : null;
 
@@ -156,7 +179,6 @@ class ExternalLessonController extends Controller
         return ExternalLesson::with('topic.subject')->find($lesson->id);
     }
 
-    
     private function normaliseOakQuiz(array $raw): array
     {
         $questions = [];
