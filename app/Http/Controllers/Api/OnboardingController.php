@@ -321,10 +321,11 @@ class OnboardingController extends Controller
                             'updated_at' => now(),
                         ]);
                         
-                        \Log::info('Onboarding: Student enrolled in external subject', [
+                        \Log::info('Onboarding: Student enrolled in Oak subject', [
                             'student_id' => $child->id,
+                            'course'     => $courseId,
+                            'grade'      => $grade,
                             'subject_id' => $subjectId,
-                            'subject_name' => $fullSubjectName
                         ]);
                     }
                 } else {
