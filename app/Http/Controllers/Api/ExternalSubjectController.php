@@ -67,12 +67,9 @@ class ExternalSubjectController extends Controller
             $subject = ExternalSubject::with(['topics' => function($query) use ($userId) {
                 $query->with(['lessons' => function($q) use ($userId) {
                     // Only hide lessons with truly blank content
-                    $q->where(function($inner) {
-                            $inner->whereNotNull('description')
-                                  ->where('description', '!=', 'fetched')
-                                  ->whereRaw('CHAR_LENGTH(description) > 50');
-                        })
-                        ->with(['userProgress' => function($p) use ($userId) {
+                    // Show all lessons regardless of description content
+                // The lesson viewer handles missing content gracefully
+                $q->with(['userProgress' => function($p) use ($userId) {
                             $p->where('user_id', $userId);
                         }]);
                 }])->orderBy('order_index');

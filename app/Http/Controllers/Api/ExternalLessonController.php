@@ -268,14 +268,31 @@ class ExternalLessonController extends Controller
 
     public function updateProgress(Request $request, $id)
     {
-        $user = auth()->user();
+        $user      = auth()->user();
+        // Support parent impersonation via query string
+        $studentId = $request->query('student_id') ?: $user->id;
+
+        $updateData = [
+            'status'        => $request->status ?? 'in_progress',
+            'video_watched' => $request->video_watched ?? false,
+        ];
+
+        // Only set started_at on first start
+        if (($request->status ?? 'in_progress') === 'in_progress') {
+            $existing = UserExternalLessonProgress::where('user_id', $studentId)
+                ->where('lesson_id', $id)->first();
+            if (!$existing) {
+                $updateData['started_at'] = now();
+            }
+        }
+
+        if ($request->status === 'completed') {
+            $updateData['completed_at'] = now();
+        }
+
         $progress = UserExternalLessonProgress::updateOrCreate(
-            ['user_id' => $user->id, 'lesson_id' => $id],
-            [
-                'status'        => $request->status ?? 'in_progress',
-                'video_watched' => $request->video_watched ?? false,
-                'started_at'    => $request->status === 'in_progress' ? now() : null,
-            ]
+            ['user_id' => $studentId, 'lesson_id' => $id],
+            $updateData
         );
         return response()->json(['success' => true, 'progress' => $progress]);
     }
