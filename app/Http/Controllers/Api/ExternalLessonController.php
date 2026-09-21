@@ -362,6 +362,11 @@ class ExternalLessonController extends Controller
             ['status' => $passed ? 'completed' : 'in_progress', 'quiz_score' => $score, 'completed_at' => $passed ? now() : null]
         );
 
+        // ── Recalculate subject progress percentage ────────────────────────
+        if ($passed) {
+            $this->recalcSubjectProgress($studentId, $lesson->topic_id ?? null);
+        }
+
         // --- FIND NEXT LESSON ID IN SEQUENCE ---
         // --- FIXED: Globally sort all lessons across all topics by their topic order and lesson order ---
         $allSubjectLessons = ExternalLesson::join('external_topics', 'external_lessons.topic_id', '=', 'external_topics.id')
@@ -386,4 +391,46 @@ class ExternalLessonController extends Controller
             'message'         => $passed ? '🎉 Great job!' : '📚 Keep practicing!',
         ]);
     }
+    /**
+     * Recalculate and update progress_percentage on user_external_subject_enrollments
+     * Called whenever a lesson is marked completed.
+     */
+    private function recalcSubjectProgress(int $studentId, ?int $topicId): void
+    {
+        if (!$topicId) return;
+
+        // Find the subject from the topic
+        $topic = ExternalTopic::find($topicId);
+        if (!$topic) return;
+        $subjectId = $topic->subject_id;
+
+        // Count total lessons in this subject (with content)
+        $totalLessons = DB::table('external_lessons as l')
+            ->join('external_topics as t', 't.id', '=', 'l.topic_id')
+            ->where('t.subject_id', $subjectId)
+            ->count();
+
+        if ($totalLessons === 0) return;
+
+        // Count completed lessons for this student in this subject
+        $completedLessons = DB::table('user_external_lesson_progress as p')
+            ->join('external_lessons as l', 'l.id', '=', 'p.lesson_id')
+            ->join('external_topics as t', 't.id', '=', 'l.topic_id')
+            ->where('p.user_id', $studentId)
+            ->where('t.subject_id', $subjectId)
+            ->where('p.status', 'completed')
+            ->count();
+
+        $percentage = (int) round(($completedLessons / $totalLessons) * 100);
+
+        // Update the enrollment record
+        DB::table('user_external_subject_enrollments')
+            ->where('user_id', $studentId)
+            ->where('external_subject_id', $subjectId)
+            ->update([
+                'progress_percentage' => $percentage,
+                'updated_at'          => now(),
+            ]);
+    }
+
 }
