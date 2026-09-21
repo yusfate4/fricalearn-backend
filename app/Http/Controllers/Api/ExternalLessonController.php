@@ -60,28 +60,37 @@ class ExternalLessonController extends Controller
         $lesson = ExternalLesson::with('topic.subject')->findOrFail($id);
         $studentId = $request->query('student_id') ?: auth()->id();
 
-        // --- SECURITY CHECK: Prevent bypassing locked lessons ---
-        $allLessons = ExternalLesson::whereHas('topic', function($q) use ($lesson) {
-            $q->where('subject_id', optional($lesson->topic)->subject_id);
-        })->orderBy('order_index')->get();
+        // --- ROBUST SECURITY CHECK: Prevent bypassing locked lessons ---
+        $allLessons = ExternalLesson::join('external_topics', 'external_lessons.topic_id', '=', 'external_topics.id')
+            ->where('external_topics.subject_id', optional(optional($lesson->topic))->subject_id)
+            ->orderBy('external_topics.order_index', 'asc')
+            ->orderBy('external_lessons.order_index', 'asc')
+            ->select('external_lessons.id')
+            ->pluck('id')
+            ->toArray();
 
-        $previousComplete = true;
-        foreach ($allLessons as $l) {
-            if ($l->id == $lesson->id) break;
-            $prog = UserExternalLessonProgress::where('user_id', $studentId)->where('lesson_id', $l->id)->first();
-            if (!($prog && $prog->status === 'completed')) {
-                $previousComplete = false;
+        $previousLessonId = null;
+        foreach ($allLessons as $index => $lessonIdInList) {
+            if ($lessonIdInList == $lesson->id && $index > 0) {
+                $previousLessonId = $allLessons[$index - 1];
                 break;
             }
         }
 
-        if (!$previousComplete) {
-            return response()->json([
-                'success' => false,
-                'message' => 'This lesson is locked until you complete the previous lessons.'
-            ], 403);
-        }
+        if ($previousLessonId) {
+            $prevProgress = UserExternalLessonProgress::where('user_id', $studentId)
+                ->where('lesson_id', $previousLessonId)
+                ->first();
 
+            if (!($prevProgress && $prevProgress->status === 'completed')) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'This lesson is locked until you complete the previous lessons.'
+                ], 403);
+            }
+        }
+        // -----------------------------------------------------------------
+        
         if ($this->needsOakContent($lesson)) {
             $lesson = $this->fetchAndStoreOakContent($lesson);
         }
