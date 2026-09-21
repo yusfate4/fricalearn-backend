@@ -384,5 +384,4 @@ class ExternalLessonController extends Controller
             'message'         => $passed ? '🎉 Great job!' : '📚 Keep practicing!',
         ]);
     }
-
 }
