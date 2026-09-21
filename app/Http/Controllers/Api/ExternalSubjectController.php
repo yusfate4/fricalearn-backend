@@ -5,11 +5,12 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\ExternalSubject;
 use App\Models\User;
+use App\Models\UserExternalLessonProgress;
 use Illuminate\Http\Request;
 
 class ExternalSubjectController extends Controller
 {
-   public function index(Request $request)
+    public function index(Request $request)
     {
         try {
             $userId = $request->input('student_id') ?: auth()->id();
@@ -39,7 +40,11 @@ class ExternalSubjectController extends Controller
 
             return response()->json(['success' => true, 'subjects' => $subjects]);
         } catch (\Exception $e) {
-            return response()->json(['success' => false, 'message' => 'Failed to fetch external subjects', 'error' => $e->getMessage()], 500);
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch external subjects',
+                'error' => $e->getMessage()
+            ], 500);
         }
     }
 
@@ -56,13 +61,12 @@ class ExternalSubjectController extends Controller
 
             $allLessonsCount = 0;
             $completedLessonsCount = 0;
-            $previousLessonCompleted = true; // First lesson is unlocked
+            $previousLessonCompleted = true;
 
             foreach ($subject->topics as $topic) {
                 foreach ($topic->lessons as $lesson) {
                     $allLessonsCount++;
 
-                    // Check progress for this specific user/student
                     $progress = UserExternalLessonProgress::where('user_id', $userId)
                         ->where('lesson_id', $lesson->id)
                         ->first();
@@ -73,13 +77,11 @@ class ExternalSubjectController extends Controller
                         $completedLessonsCount++;
                     }
 
-                    // Assign locking state
                     $lesson->is_locked = !$previousLessonCompleted;
                     $previousLessonCompleted = $isCompleted;
                 }
             }
 
-            // Attach overall progress percentage
             $subject->progress_percentage = $allLessonsCount > 0 
                 ? round(($completedLessonsCount / $allLessonsCount) * 100) 
                 : 0;
