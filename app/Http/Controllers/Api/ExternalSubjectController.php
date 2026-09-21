@@ -41,30 +41,35 @@ class ExternalSubjectController extends Controller
 
             // Recompute live progress_percentage for each subject
             foreach ($subjects as $subject) {
-                $totalLessons = DB::table('external_lessons as l')
-                    ->join('external_topics as t', 't.id', '=', 'l.topic_id')
-                    ->where('t.subject_id', $subject->id)
-                    ->count();
-
-                if ($totalLessons > 0) {
-                    $completedLessons = DB::table('user_external_lesson_progress as p')
-                        ->join('external_lessons as l', 'l.id', '=', 'p.lesson_id')
+                try {
+                    $totalLessons = DB::table('external_lessons as l')
                         ->join('external_topics as t', 't.id', '=', 'l.topic_id')
-                        ->where('p.user_id', $userId)
                         ->where('t.subject_id', $subject->id)
-                        ->where('p.status', 'completed')
                         ->count();
 
-                    $pct = (int) round(($completedLessons / $totalLessons) * 100);
+                    if ($totalLessons > 0) {
+                        $completedLessons = DB::table('user_external_lesson_progress as p')
+                            ->join('external_lessons as l', 'l.id', '=', 'p.lesson_id')
+                            ->join('external_topics as t', 't.id', '=', 'l.topic_id')
+                            ->where('p.user_id', $userId)
+                            ->where('t.subject_id', $subject->id)
+                            ->where('p.status', 'completed')
+                            ->count();
 
-                    if ($subject->pivot) {
-                        $subject->pivot->progress_percentage = $pct;
+                        $pct = (int) round(($completedLessons / $totalLessons) * 100);
+
+                        if ($subject->pivot) {
+                            $subject->pivot->progress_percentage = $pct;
+                        }
+
+                        DB::table('user_external_subject_enrollments')
+                            ->where('user_id', $userId)
+                            ->where('external_subject_id', $subject->id)
+                            ->update(['progress_percentage' => $pct, 'updated_at' => now()]);
                     }
-
-                    DB::table('user_external_subject_enrollments')
-                        ->where('user_id', $userId)
-                        ->where('external_subject_id', $subject->id)
-                        ->update(['progress_percentage' => $pct, 'updated_at' => now()]);
+                } catch (\Exception $e) {
+                    // Don't let progress calculation crash the whole response
+                    \Illuminate\Support\Facades\Log::warning('Progress recalc failed for subject ' . $subject->id . ': ' . $e->getMessage());
                 }
             }
 
