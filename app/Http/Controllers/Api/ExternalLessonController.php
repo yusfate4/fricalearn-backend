@@ -298,6 +298,14 @@ class ExternalLessonController extends Controller
         $score  = $total > 0 ? round(($correct / $total) * 100) : 0;
         $passed = $score >= 70;
 
+        // --- POINTS SYSTEM: 5 points per correct answer ---
+        $pointsEarned = $correct * 5;
+        if ($pointsEarned > 0) {
+            if (\Schema::hasColumn('users', 'points')) {
+                $student->increment('points', $pointsEarned);
+            }
+        }
+
         $subjectId = DB::table('external_topics')->where('id', $lesson->topic_id)->value('subject_id');
 
         DB::table('quiz_performance')->insert([
@@ -322,11 +330,28 @@ class ExternalLessonController extends Controller
             ['status' => $passed ? 'completed' : 'in_progress', 'quiz_score' => $score, 'completed_at' => $passed ? now() : null]
         );
 
+        // --- FIND NEXT LESSON ID IN SEQUENCE ---
+        $allSubjectLessons = ExternalLesson::whereHas('topic', function($q) use ($subjectId) {
+            $q->where('subject_id', $subjectId);
+        })->join('external_topics', 'external_lessons.topic_id', '=', 'external_topics.id')
+          ->orderBy('external_topics.order_index')
+          ->orderBy('external_lessons.order_index')
+          ->select('external_lessons.id')
+          ->pluck('id')
+          ->toArray();
+
+        $currentIndex = array_search((int)$lessonId, array_map('intval', $allSubjectLessons));
+        $nextLessonId = ($currentIndex !== false && isset($allSubjectLessons[$currentIndex + 1])) ? $allSubjectLessons[$currentIndex + 1] : null;
+
         return response()->json([
-            'success' => true, 'score' => $score,
-            'correct_answers' => $correct, 'total_questions' => $total,
-            'passed' => $passed,
-            'message' => $passed ? '🎉 Great job!' : '📚 Keep practicing!',
+            'success'         => true,
+            'score'           => $score,
+            'correct_answers' => $correct,
+            'total_questions' => $total,
+            'passed'          => $passed,
+            'points_earned'   => $pointsEarned,
+            'next_lesson_id'  => $nextLessonId,
+            'message'         => $passed ? '🎉 Great job!' : '📚 Keep practicing!',
         ]);
     }
 }
