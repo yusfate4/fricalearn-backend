@@ -162,7 +162,7 @@ class ChildProgressController extends Controller
         $recentLessons = DB::table('user_external_lesson_progress as p')
             ->join('external_lessons as l', 'l.id', '=', 'p.lesson_id')
             ->join('external_topics as t', 't.id', '=', 'l.topic_id')
-            ->join('external_subjects as s', 's.id', '=', 'qp.subject_id')
+            ->join('external_subjects as s', 's.id', '=', 't.subject_id')
             ->where('p.user_id', $childId)
             ->where('p.status', 'completed')
             ->select(
