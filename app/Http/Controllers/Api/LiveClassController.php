@@ -4,105 +4,92 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\LiveClass;
-use App\Services\LiveClassService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class LiveClassController extends Controller
 {
-    protected $liveClassService;
-
-    public function __construct(LiveClassService $lcs)
+    public function index()
     {
-        $this->liveClassService = $lcs;
+        $classes = LiveClass::with(['tutor:id,name'])
+            ->where('scheduled_at', '>', now()->subHours(2))
+            ->orderBy('scheduled_at', 'asc')
+            ->get();
+
+        return response()->json($classes);
     }
 
-    /**
-     * 📺 1. LIST LIVE CLASSES
-     * Used by both the Student view and the Admin Manager
-     */
-    public function index(Request $request)
+    public function show($id)
     {
-        try {
-            // Fetch classes starting in the future OR that started in the last 2 hours
-            // 💡 Note: Ensure your LiveClass model has 'tutor' and 'lesson' relationships defined
-            $classes = LiveClass::with(['tutor', 'lesson'])
-                ->where('scheduled_at', '>', now()->subHours(2)) 
-                ->orderBy('scheduled_at', 'asc')
-                ->get();
-
-            return response()->json($classes);
-        } catch (\Exception $e) {
-            Log::error("LiveClass Index Error: " . $e->getMessage());
-            return response()->json(['error' => 'Failed to load classes'], 500);
-        }
+        return response()->json(LiveClass::with(['tutor:id,name'])->findOrFail($id));
     }
 
-    /**
-     * 📊 2. ADMIN DATA (The "404" Fix)
-     * If your frontend calls /api/admin/live-classes/admin-data, this handles it.
-     */
     public function adminData()
     {
+        $upcoming = LiveClass::with(['tutor:id,name'])
+            ->where('scheduled_at', '>', now())
+            ->orderBy('scheduled_at')
+            ->get();
+
+        $past = LiveClass::with(['tutor:id,name'])
+            ->where('scheduled_at', '<=', now())
+            ->orderByDesc('scheduled_at')
+            ->limit(10)
+            ->get();
+
         return response()->json([
-            'total_classes' => LiveClass::count(),
-            'upcoming_count' => LiveClass::where('scheduled_at', '>', now())->count(),
-            'recent_classes' => LiveClass::latest()->take(5)->get()
+            'upcoming'       => $upcoming,
+            'past'           => $past,
+            'upcoming_count' => $upcoming->count(),
         ]);
     }
 
-    /**
-     * 🔍 3. SHOW SINGLE CLASS
-     */
-   public function show($id)
-{
-    try {
-        // 🕵️ Find the class by ID
-        $liveClass = LiveClass::find($id);
-
-        if (!$liveClass) {
-            return response()->json([
-                'error' => 'Classroom not found',
-                'message' => 'The scheduled room for this lesson does not exist yet.'
-            ], 404);
-        }
-
-        return response()->json($liveClass);
-    } catch (\Exception $e) {
-        return response()->json(['error' => $e->getMessage()], 500);
-    }
-}
-
-    /**
-     * 🚀 4. STORE NEW CLASS
-     */
     public function store(Request $request)
     {
         $user = $request->user();
-        
-        // Use the isStaff helper or role check
         $isStaff = $user->role === 'admin' || $user->role === 'tutor' || (int)$user->is_admin === 1;
 
         if (!$isStaff) {
             return response()->json(['message' => 'Unauthorized. Staff only.'], 403);
         }
 
-        try {
-            $class = $this->liveClassService->createLiveClass($request->all());
-            return response()->json($class, 201);
-        } catch (\Exception $e) {
-            return response()->json(['error' => $e->getMessage()], 422);
-        }
+        $validated = $request->validate([
+            'title'            => 'required|string|max:255',
+            'description'      => 'nullable|string',
+            'scheduled_at'     => 'required|date',
+            'duration_minutes' => 'nullable|integer|min:1',
+            'meeting_url'      => 'nullable|string',
+            'is_paid'          => 'nullable|boolean',
+            'price'            => 'nullable|numeric',
+            'max_attendees'    => 'nullable|integer',
+            'status'           => 'nullable|string',
+        ]);
+
+        // lesson_id is required by DB but conceptually optional for standalone live classes
+        // Use 0 as a sentinel value (or the first lesson if available)
+        $lessonId = DB::table('lessons')->value('id') ?? 1;
+        $tutorId  = $user->id;
+
+        $class = LiveClass::create([
+            'lesson_id'        => $lessonId,
+            'tutor_id'         => $tutorId,
+            'title'            => $validated['title'],
+            'description'      => $validated['description'] ?? null,
+            'scheduled_at'     => $validated['scheduled_at'],
+            'duration_minutes' => $validated['duration_minutes'] ?? 60,
+            'meeting_url'      => $validated['meeting_url'] ?? null,
+            'status'           => $validated['status'] ?? 'scheduled',
+            'max_attendees'    => $validated['max_attendees'] ?? 50,
+        ]);
+
+        return response()->json($class, 201);
     }
 
-    /**
-     * 🗑️ 5. DELETE CLASS
-     */
     public function destroy($id)
     {
-        $liveClass = LiveClass::findOrFail($id);
-        $liveClass->delete();
-
+        $class = LiveClass::findOrFail($id);
+        $class->delete();
         return response()->json(['message' => 'Class deleted successfully']);
     }
 }
