@@ -9,18 +9,15 @@ use Illuminate\Http\Request;
 
 class ExternalSubjectController extends Controller
 {
-    public function index(Request $request)
+   public function index(Request $request)
     {
         try {
             $userId = $request->input('student_id') ?: auth()->id();
             $user = User::findOrFail($userId);
             
             $subjects = $user->externalSubjects()
-                            ->with(['topics.lessons' => function($query) use ($userId) {
-                                $query->select('id', 'topic_id', 'title', 'duration_minutes', 'order_index', 'quiz_data', 'description')
-                                    ->with(['userProgress' => function($q) use ($userId) {
-                                        $q->where('user_id', $userId)->select('user_id', 'lesson_id', 'status', 'quiz_score');
-                                    }]);
+                            ->with(['topics.lessons' => function($query) {
+                                $query->select('id', 'topic_id', 'title', 'duration_minutes', 'order_index');
                             }])
                             ->get();
 
@@ -29,7 +26,10 @@ class ExternalSubjectController extends Controller
                 foreach ($subj->topics as $top) {
                     foreach ($top->lessons as $les) {
                         $total++;
-                        if ($les->userProgress->where('status', 'completed')->count() > 0) {
+                        $p = UserExternalLessonProgress::where('user_id', $userId)
+                            ->where('lesson_id', $les->id)
+                            ->first();
+                        if ($p && $p->status === 'completed') {
                             $done++;
                         }
                     }
@@ -39,7 +39,7 @@ class ExternalSubjectController extends Controller
 
             return response()->json(['success' => true, 'subjects' => $subjects]);
         } catch (\Exception $e) {
-            return response()->json(['success' => false, 'message' => 'Failed to fetch subjects', 'error' => $e->getMessage()], 500);
+            return response()->json(['success' => false, 'message' => 'Failed to fetch external subjects', 'error' => $e->getMessage()], 500);
         }
     }
 
@@ -48,40 +48,53 @@ class ExternalSubjectController extends Controller
         try {
             $userId = $request->input('student_id') ?: auth()->id();
             
-            $subject = ExternalSubject::with(['topics' => function($query) use ($userId) {
-                $query->with(['lessons' => function($q) use ($userId) {
-                    $q->with(['userProgress' => function($p) use ($userId) {
-                        $p->where('user_id', $userId);
-                    }]);
-                }])->orderBy('order_index');
+            $subject = ExternalSubject::with(['topics' => function($query) {
+                $query->orderBy('order_index');
+            }, 'topics.lessons' => function($query) {
+                $query->orderBy('order_index');
             }])->findOrFail($id);
 
             $allLessonsCount = 0;
             $completedLessonsCount = 0;
-            $previousLessonCompleted = true;
+            $previousLessonCompleted = true; // First lesson is unlocked
 
             foreach ($subject->topics as $topic) {
-                $sortedLessons = $topic->lessons->sortBy('order_index');
-                foreach ($sortedLessons as $lesson) {
+                foreach ($topic->lessons as $lesson) {
                     $allLessonsCount++;
-                    $progress = $lesson->userProgress->first();
+
+                    // Check progress for this specific user/student
+                    $progress = UserExternalLessonProgress::where('user_id', $userId)
+                        ->where('lesson_id', $lesson->id)
+                        ->first();
+
                     $isCompleted = $progress && $progress->status === 'completed';
 
                     if ($isCompleted) {
                         $completedLessonsCount++;
                     }
 
+                    // Assign locking state
                     $lesson->is_locked = !$previousLessonCompleted;
                     $previousLessonCompleted = $isCompleted;
                 }
-                $topic->setRelation('lessons', $sortedLessons);
             }
 
-            $subject->progress_percentage = $allLessonsCount > 0 ? round(($completedLessonsCount / $allLessonsCount) * 100) : 0;
+            // Attach overall progress percentage
+            $subject->progress_percentage = $allLessonsCount > 0 
+                ? round(($completedLessonsCount / $allLessonsCount) * 100) 
+                : 0;
 
-            return response()->json(['success' => true, 'subject' => $subject]);
+            return response()->json([
+                'success' => true,
+                'subject' => $subject
+            ]);
+            
         } catch (\Exception $e) {
-            return response()->json(['success' => false, 'message' => 'Failed to fetch subject', 'error' => $e->getMessage()], 404);
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch subject',
+                'error' => $e->getMessage()
+            ], 404);
         }
     }
 }
