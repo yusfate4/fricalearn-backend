@@ -60,50 +60,7 @@ class ExternalLessonController extends Controller
         $lesson = ExternalLesson::with('topic.subject')->findOrFail($id);
         $studentId = $request->query('student_id') ?: auth()->id();
 
-        // --- LESSON ACCESS CHECK ---
-        // Rule: Lesson content is always readable.
-        // Only enforce sequential access at the quiz level (see submitQuiz).
-        // We still check: if the previous lesson hasn't been started at all,
-        // block access so students don't skip ahead entirely.
-
-        // Get all lessons in this subject in order (within same topic only for soft lock)
-        $topicLessons = ExternalLesson::where('topic_id', $lesson->topic_id)
-            ->orderBy('order_index', 'asc')
-            ->pluck('id')
-            ->toArray();
-
-        $previousLessonId = null;
-        foreach ($topicLessons as $index => $lessonIdInList) {
-            if ($lessonIdInList == $lesson->id && $index > 0) {
-                $previousLessonId = $topicLessons[$index - 1];
-                break;
-            }
-        }
-
-        // Lock check: only block if previous lesson quiz score is < 70% (not passed)
-        // First lesson in any topic is always open.
-        // If previous lesson has no progress at all, that means we're checking
-        // cross-topic progression — always allow within a topic for now.
-        if ($previousLessonId) {
-            $prevProgress = UserExternalLessonProgress::where('user_id', $studentId)
-                ->where('lesson_id', $previousLessonId)
-                ->first();
-
-            // Only block if the previous lesson has been ATTEMPTED but FAILED (score < 70)
-            // Never block if it simply hasn't been opened yet — that would create a deadlock
-            if ($prevProgress && $prevProgress->quiz_score !== null && $prevProgress->quiz_score < 70
-                && $prevProgress->status !== 'completed') {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Pass the previous lesson quiz (70%+) to unlock this lesson.',
-                    'locked'  => true,
-                    'prev_score' => $prevProgress->quiz_score,
-                ], 403);
-            }
-        }
-
-        // Auto-create progress record on lesson open (marks it as started)
-        // This ensures the NEXT lesson's lock check finds a record and doesn't block
+        // Auto-create progress record on lesson open so the student's journey is tracked
         UserExternalLessonProgress::firstOrCreate(
             ['user_id' => $studentId, 'lesson_id' => $id],
             ['status' => 'in_progress', 'started_at' => now(), 'video_watched' => false]
