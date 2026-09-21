@@ -2,7 +2,6 @@
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Artisan;
 
 // --- 🎮 Controllers ---
@@ -170,6 +169,10 @@ Route::get('/students/{id}/info', function($id) {
             Route::get('/redemptions', [GamificationController::class, 'getAllRedemptions']);
             Route::post('/redemptions/{id}/fulfill', [GamificationController::class, 'fulfillRedemption']);
         });
+
+        // Student: My collection (claimed/redeemed rewards)
+        Route::get('/my-rewards', [GamificationController::class, 'getMyRewards']);
+        Route::get('/my-treasures', [GamificationController::class, 'getMyRewards']); // alias
     });
 
     /*
@@ -238,7 +241,7 @@ Route::prefix('onboarding')->group(function () {
 
  
 // External subjects (Maths/English)
-Route::prefix('external')->group(function () {
+Route::prefix('external')->middleware('auth:sanctum')->group(function () {
     
     // Get user's enrolled subjects
     Route::get('/subjects', [ExternalSubjectController::class, 'index']);
@@ -268,7 +271,7 @@ Route::prefix('external')->group(function () {
             'email' => $user->email
         ]
     ]);
-});
+})->middleware('auth:sanctum');
 
 });
 });
