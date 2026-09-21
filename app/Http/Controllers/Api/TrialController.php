@@ -42,6 +42,15 @@ class TrialController extends Controller
             ? (int) ceil(now()->floatDiffInDays($user->trial_ends_at))
             : 0;
 
+        // Decode selected courses for frontend display
+        $selectedCourses = [];
+        if (!empty($user->selected_courses)) {
+            $decoded = is_array($user->selected_courses)
+                ? $user->selected_courses
+                : json_decode($user->selected_courses, true);
+            $selectedCourses = $decoded ?? [];
+        }
+
         return response()->json([
             'success'            => true,
             'is_premium'         => $isPremium,
@@ -50,6 +59,9 @@ class TrialController extends Controller
             'trial_ends_at'      => $user->trial_ends_at,
             'trial_days_left'    => $daysLeft,
             'access_expired'     => !$isPremium && !$onTrial,
+            'selected_courses'   => $selectedCourses,
+            'has_maths'          => in_array('maths', $selectedCourses),
+            'has_english'        => in_array('english', $selectedCourses),
         ]);
     }
 
