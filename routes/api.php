@@ -236,6 +236,8 @@ Route::prefix('onboarding')->group(function () {
         Route::get('/leaderboard', [GamificationController::class, 'getLeaderboard']);
         Route::get('/rewards', [GamificationController::class, 'getRewardsCatalog']);
         Route::post('/rewards/{id}/redeem', [GamificationController::class, 'redeemReward']);
+        Route::get('/my-rewards', [GamificationController::class, 'getMyRewards']);
+        Route::get('/my-collection', [GamificationController::class, 'getMyRewards']);
     });
 
 
