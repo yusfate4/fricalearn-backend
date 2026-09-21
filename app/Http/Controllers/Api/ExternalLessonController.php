@@ -361,14 +361,14 @@ class ExternalLessonController extends Controller
         );
 
         // --- FIND NEXT LESSON ID IN SEQUENCE ---
-        $allSubjectLessons = ExternalLesson::whereHas('topic', function($q) use ($subjectId) {
-            $q->where('subject_id', $subjectId);
-        })->join('external_topics', 'external_lessons.topic_id', '=', 'external_topics.id')
-          ->orderBy('external_topics.order_index')
-          ->orderBy('external_lessons.order_index')
-          ->select('external_lessons.id')
-          ->pluck('id')
-          ->toArray();
+        // --- FIXED: Globally sort all lessons across all topics by their topic order and lesson order ---
+        $allSubjectLessons = ExternalLesson::join('external_topics', 'external_lessons.topic_id', '=', 'external_topics.id')
+            ->where('external_topics.subject_id', $subjectId)
+            ->orderBy('external_topics.order_index', 'asc')
+            ->orderBy('external_lessons.order_index', 'asc')
+            ->select('external_lessons.id')
+            ->pluck('id')
+            ->toArray();
 
         $currentIndex = array_search((int)$lessonId, array_map('intval', $allSubjectLessons));
         $nextLessonId = ($currentIndex !== false && isset($allSubjectLessons[$currentIndex + 1])) ? $allSubjectLessons[$currentIndex + 1] : null;
