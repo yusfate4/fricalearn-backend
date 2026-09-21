@@ -3,24 +3,18 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\Course;
 use App\Models\User;
 use App\Models\EnrollmentPayment;
-use App\Services\AutoEnrollmentService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Carbon;
 
 class OnboardingController extends Controller
 {
-    protected $autoEnrollmentService;
-
-    public function __construct(AutoEnrollmentService $autoEnrollmentService)
-    {
-        $this->autoEnrollmentService = $autoEnrollmentService;
-    }
-
     /**
      * Get courses data array (private helper)
      */
@@ -33,12 +27,14 @@ class OnboardingController extends Controller
                 'description' => 'Master essential maths skills aligned with UK Key Stages 1-4',
                 'price_ngn' => 0,
                 'price_gbp' => 0,
-                'original_price_ngn' => 30000,
-                'original_price_gbp' => 15,
+                'single_price_ngn' => 20000,
+                'single_price_gbp' => 10,
+                'bundle_price_ngn' => 30000,
+                'bundle_price_gbp' => 15,
                 'type' => 'paid',
                 'trial' => true,
-                'trial_label' => '1 Month Free, then from ₦30,000',
-                'grades' => [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+                'trial_label' => '1 Month Free, then ₦20,000 (₦30,000 with both subjects)',
+                'grades' => [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
                 'icon' => '🔢',
             ],
             [
@@ -47,12 +43,14 @@ class OnboardingController extends Controller
                 'description' => 'Develop reading, writing, and comprehension skills',
                 'price_ngn' => 0,
                 'price_gbp' => 0,
-                'original_price_ngn' => 30000,
-                'original_price_gbp' => 15,
+                'single_price_ngn' => 20000,
+                'single_price_gbp' => 10,
+                'bundle_price_ngn' => 30000,
+                'bundle_price_gbp' => 15,
                 'type' => 'paid',
                 'trial' => true,
-                'trial_label' => '1 Month Free, then from ₦30,000',
-                'grades' => [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+                'trial_label' => '1 Month Free, then ₦20,000 (₦30,000 with both subjects)',
+                'grades' => [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
                 'icon' => '📚',
             ],
             [
@@ -228,7 +226,7 @@ class OnboardingController extends Controller
                 'onboarding_completed' => true,
                 'is_active'            => true,
                 'email_verified_at'    => now(),          // child accounts auto-verified
-                'curriculum_region'    => $validated['currency'] === 'GBP' ? 'uk' : 'nigeria',
+                'curriculum_region'    => 'uk', // Always UK curriculum (Oak) — currency is just payment preference
                 'payment_currency'     => $validated['currency'],
                 'trial_ends_at'        => now()->addDays(30), // ✅ 30-day free trial starts NOW
                 'is_premium'           => false,
@@ -304,7 +302,7 @@ class OnboardingController extends Controller
                     if ($grade) {
                         $subjectId = $oakSubjectMap[(int)$grade] ?? ($courseId === 'maths' ? 44 : 45);
 
-                        \Log::info('Onboarding: Enrolling in Oak subject', [
+                        Log::info('Onboarding: Enrolling in Oak subject', [
                             'student_id' => $child->id,
                             'course'     => $courseId,
                             'grade'      => $grade,
@@ -321,7 +319,7 @@ class OnboardingController extends Controller
                             'updated_at' => now(),
                         ]);
                         
-                        \Log::info('Onboarding: Student enrolled in Oak subject', [
+                        Log::info('Onboarding: Student enrolled in Oak subject', [
                             'student_id' => $child->id,
                             'course'     => $courseId,
                             'grade'      => $grade,
@@ -369,10 +367,10 @@ class OnboardingController extends Controller
 
             // ── Send enrolment confirmation email to parent ──────────
             try {
-                $parent = \App\Models\User::find($validated['parent_id']);
+                $parent = User::find($validated['parent_id']);
                 if ($parent && $parent->email) {
                     $trialEnds   = $child->trial_ends_at
-                        ? \Illuminate\Support\Carbon::parse($child->trial_ends_at)->format('d F Y')
+                        ? Carbon::parse($child->trial_ends_at)->format('d F Y')
                         : '30 days from today';
                     $courseNames = [
                         'maths'   => 'Mathematics',
@@ -420,13 +418,13 @@ class OnboardingController extends Controller
                       </div>
                     </div>";
 
-                    \Illuminate\Support\Facades\Mail::html($html, function ($m) use ($parent, $child) {
+                    Mail::html($html, function ($m) use ($parent, $child) {
                         $m->to($parent->email)
                           ->subject("🎉 " . $child->name . " is enrolled at FricaLearn — free trial starts today!");
                     });
                 }
             } catch (\Exception $mailErr) {
-                \Log::error('Enrolment confirmation email failed: ' . $mailErr->getMessage());
+                Log::error('Enrolment confirmation email failed: ' . $mailErr->getMessage());
             }
 
             return response()->json([
