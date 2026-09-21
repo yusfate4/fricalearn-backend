@@ -44,10 +44,10 @@ class AuthController extends Controller
                         ->subject("📥 New " . ucfirst($validated['role']) . " Inquiry: " . $validated['name']);
             });
 
-            return response()->json(['message' => 'Ẹ ṣé! Your message has been sent successfully.'], 200);
+            return response()->json(['message' => 'Thank you! Your message has been sent successfully.'], 200);
         } catch (\Exception $e) {
             Log::error("Contact Form Failure: " . $e->getMessage());
-            return response()->json(['message' => 'Oluko is having trouble sending your message. Please try again later.'], 500);
+            return response()->json(['message' => 'Tutor is having trouble sending your message. Please try again later.'], 500);
         }
     }
 

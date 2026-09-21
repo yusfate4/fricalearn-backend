@@ -299,10 +299,22 @@ class ExternalLessonController extends Controller
         $passed = $score >= 70;
 
         // --- POINTS SYSTEM: 5 points per correct answer ---
+       // --- POINTS SYSTEM: 5 points per correct answer ---
         $pointsEarned = $correct * 5;
         if ($pointsEarned > 0) {
-            if (\Schema::hasColumn('users', 'points')) {
-                $student->increment('points', $pointsEarned);
+            $studentProfile = StudentProfile::where('user_id', $student->id)->first();
+            if ($studentProfile) {
+                $studentProfile->increment('total_points', $pointsEarned);
+
+                // Recalculate rank automatically using GamificationController logic
+                $points = $studentProfile->total_points;
+                if ($points >= 5000) $rank = 'Master';
+                elseif ($points >= 3001) $rank = 'Expert';
+                elseif ($points >= 1501) $rank = 'Scholar';
+                elseif ($points >= 501) $rank = 'Explorer';
+                else $rank = 'Beginner';
+
+                $studentProfile->update(['current_level' => $rank]);
             }
         }
 
