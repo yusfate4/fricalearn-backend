@@ -10,36 +10,43 @@ use Illuminate\Http\Request;
 
 class ExternalSubjectController extends Controller
 {
-    public function index(Request $request)
+  public function index(Request $request)
     {
         try {
             $userId = $request->input('student_id') ?: auth()->id();
             $user = User::findOrFail($userId);
             
-            $subjects = $user->externalSubjects()
-                            ->with(['topics.lessons' => function($query) {
-                                $query->select('id', 'topic_id', 'title', 'duration_minutes', 'order_index');
-                            }])
-                            ->get();
+            // Get subjects through the user relation
+            $subjects = $user->externalSubjects()->with(['topics.lessons.userProgress' => function($query) use ($userId) {
+                $query->where('user_id', $userId);
+            }])->get();
 
+            // Calculate progress percentage safely in-memory without extra query overhead
             foreach ($subjects as $subj) {
-                $total = 0; $done = 0;
+                $total = 0; 
+                $done = 0;
+
                 foreach ($subj->topics as $top) {
                     foreach ($top->lessons as $les) {
                         $total++;
-                        $p = UserExternalLessonProgress::where('user_id', $userId)
-                            ->where('lesson_id', $les->id)
-                            ->first();
-                        if ($p && $p->status === 'completed') {
+                        // Check if preloaded userProgress has a completed status
+                        $progressRecord = $les->userProgress->first();
+                        if ($progressRecord && $progressRecord->status === 'completed') {
                             $done++;
                         }
                     }
+                }
+                
+                // Assign progress directly to pivot or a custom attribute for the frontend
+                if (!isset($subj->pivot)) {
+                    $subj->pivot = new \stdClass();
                 }
                 $subj->pivot->progress_percentage = $total > 0 ? round(($done / $total) * 100) : 0;
             }
 
             return response()->json(['success' => true, 'subjects' => $subjects]);
         } catch (\Exception $e) {
+            \Log::error("External subjects index error: " . $e->getMessage());
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch external subjects',
