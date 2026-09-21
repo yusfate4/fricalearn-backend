@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CourseController;
 use App\Http\Controllers\Api\LessonController;
 use App\Http\Controllers\Api\GamificationController;
+use App\Http\Controllers\Api\AdminController;
 use App\Http\Controllers\Api\LiveClassController;
 use App\Http\Controllers\Api\ParentController;
 use App\Http\Controllers\Api\QuestionController;
@@ -125,6 +126,17 @@ Route::get('/students/{id}/info', function($id) {
             return response()->json(\App\Models\User::where('role', 'student')->with('studentProfile')->get());
         });
 
+        // ── Unified Admin API ─────────────────────────────────────────
+        Route::get('/overview',              [AdminController::class, 'overview']);
+        Route::get('/students',              [AdminController::class, 'students']);
+        Route::get('/parents-list',          [AdminController::class, 'parents']);
+        Route::get('/full-analytics',        [AdminController::class, 'analytics']);
+        Route::get('/payments-overview',     [AdminController::class, 'paymentsOverview']);
+        Route::get('/questions-list',        [AdminController::class, 'questions']);
+        Route::put('/questions/{id}',        [AdminController::class, 'updateQuestion']);
+        Route::delete('/questions/{id}',     [AdminController::class, 'deleteQuestion']);
+        Route::post('/conversations/{id}/reply', [AdminController::class, 'replyToChat']);
+
         Route::get('/tutor-profile', [AuthController::class, 'getTutorProfile']);
         Route::post('/tutor-profile', [AuthController::class, 'updateTutorProfile']);
         
@@ -169,10 +181,6 @@ Route::get('/students/{id}/info', function($id) {
             Route::get('/redemptions', [GamificationController::class, 'getAllRedemptions']);
             Route::post('/redemptions/{id}/fulfill', [GamificationController::class, 'fulfillRedemption']);
         });
-
-        // Student: My collection (claimed/redeemed rewards)
-        Route::get('/my-rewards', [GamificationController::class, 'getMyRewards']);
-        Route::get('/my-treasures', [GamificationController::class, 'getMyRewards']); // alias
     });
 
     /*
@@ -236,8 +244,6 @@ Route::prefix('onboarding')->group(function () {
         Route::get('/leaderboard', [GamificationController::class, 'getLeaderboard']);
         Route::get('/rewards', [GamificationController::class, 'getRewardsCatalog']);
         Route::post('/rewards/{id}/redeem', [GamificationController::class, 'redeemReward']);
-        Route::get('/my-rewards', [GamificationController::class, 'getMyRewards']);
-        Route::get('/my-collection', [GamificationController::class, 'getMyRewards']);
     });
 
 
