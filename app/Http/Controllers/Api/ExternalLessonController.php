@@ -80,21 +80,34 @@ class ExternalLessonController extends Controller
             }
         }
 
-        // Only block if previous lesson has NEVER been opened (not even started)
-        // Students CAN read a lesson before passing the quiz — quiz lock is enforced in submitQuiz
+        // Lock check: only block if previous lesson quiz score is < 70% (not passed)
+        // First lesson in any topic is always open.
+        // If previous lesson has no progress at all, that means we're checking
+        // cross-topic progression — always allow within a topic for now.
         if ($previousLessonId) {
             $prevProgress = UserExternalLessonProgress::where('user_id', $studentId)
                 ->where('lesson_id', $previousLessonId)
                 ->first();
 
-            if (!$prevProgress) {
+            // Only block if the previous lesson has been ATTEMPTED but FAILED (score < 70)
+            // Never block if it simply hasn't been opened yet — that would create a deadlock
+            if ($prevProgress && $prevProgress->quiz_score !== null && $prevProgress->quiz_score < 70
+                && $prevProgress->status !== 'completed') {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Please complete the previous lesson first.',
+                    'message' => 'Pass the previous lesson quiz (70%+) to unlock this lesson.',
                     'locked'  => true,
+                    'prev_score' => $prevProgress->quiz_score,
                 ], 403);
             }
         }
+
+        // Auto-create progress record on lesson open (marks it as started)
+        // This ensures the NEXT lesson's lock check finds a record and doesn't block
+        UserExternalLessonProgress::firstOrCreate(
+            ['user_id' => $studentId, 'lesson_id' => $id],
+            ['status' => 'in_progress', 'started_at' => now(), 'video_watched' => false]
+        );
         // -----------------------------------------------------------------
         
         if ($this->needsOakContent($lesson)) {
