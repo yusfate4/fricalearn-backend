@@ -2,6 +2,7 @@
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Artisan;
 
 // --- 🎮 Controllers ---
@@ -24,6 +25,7 @@ use App\Http\Controllers\Api\ExternalSubjectController;
 use App\Http\Controllers\Api\ExternalLessonController;
 use App\Http\Controllers\Api\OnboardingController;
 use App\Http\Controllers\Api\MonthlyReportController;
+use App\Http\Controllers\Api\ChildProgressController;
 use App\Http\Controllers\Api\OakCurriculumController;
 
 
@@ -185,6 +187,7 @@ Route::get('/students/{id}/info', function($id) {
         Route::get('/active-student/{id}', [ParentController::class, 'getActiveStudent']);
         Route::get('/student-analytics/{childId}', [MonthlyReportController::class, 'getStudentAnalytics']);
     Route::post('/send-monthly-report/{childId}', [MonthlyReportController::class, 'emailMonthlyReport']);
+    Route::get('/child/{childId}/progress', [ChildProgressController::class, 'getProgress']);
     });
 
 
@@ -235,7 +238,7 @@ Route::prefix('onboarding')->group(function () {
 
  
 // External subjects (Maths/English)
-Route::prefix('external')->middleware('auth:sanctum')->group(function () {
+Route::prefix('external')->group(function () {
     
     // Get user's enrolled subjects
     Route::get('/subjects', [ExternalSubjectController::class, 'index']);
@@ -265,7 +268,7 @@ Route::prefix('external')->middleware('auth:sanctum')->group(function () {
             'email' => $user->email
         ]
     ]);
-})->middleware('auth:sanctum');
+});
 
 });
 });
