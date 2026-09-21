@@ -273,7 +273,7 @@ class ExternalLessonController extends Controller
     {
         $user = auth()->user();
         
-        // --- Parent impersonation check ---
+        // Handle parent impersonation or direct student
         $studentId = $request->query('student_id') ?: ($user->role === 'parent' ? $request->input('student_id') : $user->id);
         $studentUser = \App\Models\User::findOrFail($studentId);
 
@@ -294,24 +294,37 @@ class ExternalLessonController extends Controller
 
         $correct  = 0; $wrongIds = [];
         foreach ($questions as $i => $q) {
-            $userAns   = $answers['q' . ($i + 1)] ?? null;
-            $rightAns  = $q['correct_answer'] ?? $q['correct'] ?? null;
-            if ($userAns && $userAns === $rightAns) { $correct++; }
-            else { $wrongIds[] = $i + 1; }
+            $userAns   = trim($answers['q' . ($i + 1)] ?? '');
+            
+            // Collect all possible correct key variations
+            $rightAns1 = trim($q['correct_answer'] ?? '');
+            $rightAns2 = trim($q['correct'] ?? '');
+            $correctIdx = $q['correct_index'] ?? null;
+            $rightAns3 = ($correctIdx !== null && isset($q['options'][$correctIdx])) ? trim($q['options'][$correctIdx]) : '';
+
+            // Check if user answer matches any form of the correct answer
+            if ($userAns !== '' && (
+                ($rightAns1 !== '' && strcasecmp($userAns, $rightAns1) === 0) ||
+                ($rightAns2 !== '' && strcasecmp($userAns, $rightAns2) === 0) ||
+                ($rightAns3 !== '' && strcasecmp($userAns, $rightAns3) === 0)
+            )) {
+                $correct++;
+            } else {
+                $wrongIds[] = $i + 1;
+            }
         }
 
         $total  = count($questions);
         $score  = $total > 0 ? round(($correct / $total) * 100) : 0;
         $passed = $score >= 70;
 
-        // --- POINTS SYSTEM: 5 points per correct answer for the specific student ---
+        // --- POINTS SYSTEM: 5 points per correct answer ---
         $pointsEarned = $correct * 5;
         if ($pointsEarned > 0) {
             $studentProfile = StudentProfile::where('user_id', $studentUser->id)->first();
             if ($studentProfile) {
                 $studentProfile->increment('total_points', $pointsEarned);
 
-                // Recalculate rank automatically
                 $points = $studentProfile->total_points;
                 if ($points >= 5000) $rank = 'Master';
                 elseif ($points >= 3001) $rank = 'Expert';
@@ -371,4 +384,5 @@ class ExternalLessonController extends Controller
             'message'         => $passed ? '🎉 Great job!' : '📚 Keep practicing!',
         ]);
     }
+
 }
