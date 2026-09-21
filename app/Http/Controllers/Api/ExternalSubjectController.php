@@ -132,6 +132,29 @@ class ExternalSubjectController extends Controller
                 }
             }
 
+            // ── Recompute progress for this subject ──────────────────
+            try {
+                $totalLessons = DB::table('external_lessons as l')
+                    ->join('external_topics as t', 't.id', '=', 'l.topic_id')
+                    ->where('t.subject_id', $id)
+                    ->count();
+
+                if ($totalLessons > 0) {
+                    $completedLessons = DB::table('user_external_lesson_progress as p')
+                        ->join('external_lessons as l', 'l.id', '=', 'p.lesson_id')
+                        ->join('external_topics as t', 't.id', '=', 'l.topic_id')
+                        ->where('p.user_id', $userId)
+                        ->where('t.subject_id', $id)
+                        ->where('p.status', 'completed')
+                        ->count();
+
+                    $pct = (int) round(($completedLessons / $totalLessons) * 100);
+                    $subject->progress_percentage = $pct;
+                    $subject->lessons_completed   = $completedLessons;
+                    $subject->lessons_total        = $totalLessons;
+                }
+            } catch (\Exception $ignored) {}
+
             return response()->json([
                 'success' => true,
                 'subject' => $subject
