@@ -10,6 +10,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use App\Models\StudentProfile;
 
 class ExternalLessonController extends Controller
 {
@@ -268,9 +269,14 @@ class ExternalLessonController extends Controller
     // SUBMIT QUIZ
     // =========================================================
 
-    public function submitQuiz(Request $request, $lessonId)
+   public function submitQuiz(Request $request, $lessonId)
     {
-        $student  = auth()->user();
+        $user = auth()->user();
+        
+        // --- Parent impersonation check ---
+        $studentId = $request->query('student_id') ?: ($user->role === 'parent' ? $request->input('student_id') : $user->id);
+        $studentUser = \App\Models\User::findOrFail($studentId);
+
         $lesson   = DB::table('external_lessons')->find($lessonId);
         $quizData = json_decode($lesson->quiz_data, true);
 
@@ -298,15 +304,14 @@ class ExternalLessonController extends Controller
         $score  = $total > 0 ? round(($correct / $total) * 100) : 0;
         $passed = $score >= 70;
 
-        // --- POINTS SYSTEM: 5 points per correct answer ---
-       // --- POINTS SYSTEM: 5 points per correct answer ---
+        // --- POINTS SYSTEM: 5 points per correct answer for the specific student ---
         $pointsEarned = $correct * 5;
         if ($pointsEarned > 0) {
-            $studentProfile = StudentProfile::where('user_id', $student->id)->first();
+            $studentProfile = StudentProfile::where('user_id', $studentUser->id)->first();
             if ($studentProfile) {
                 $studentProfile->increment('total_points', $pointsEarned);
 
-                // Recalculate rank automatically using GamificationController logic
+                // Recalculate rank automatically
                 $points = $studentProfile->total_points;
                 if ($points >= 5000) $rank = 'Master';
                 elseif ($points >= 3001) $rank = 'Expert';
@@ -321,7 +326,7 @@ class ExternalLessonController extends Controller
         $subjectId = DB::table('external_topics')->where('id', $lesson->topic_id)->value('subject_id');
 
         DB::table('quiz_performance')->insert([
-            'student_id'         => $student->id,
+            'student_id'         => $studentUser->id,
             'lesson_id'          => $lessonId,
             'topic_id'           => $lesson->topic_id,
             'subject_id'         => $subjectId,
@@ -332,13 +337,13 @@ class ExternalLessonController extends Controller
             'wrong_question_ids' => json_encode($wrongIds),
             'passed'             => $passed,
             'completed_at'       => now(),
-            'attempt_number'     => DB::table('quiz_performance')->where('student_id', $student->id)->where('lesson_id', $lessonId)->count() + 1,
+            'attempt_number'     => DB::table('quiz_performance')->where('student_id', $studentUser->id)->where('lesson_id', $lessonId)->count() + 1,
             'created_at'         => now(),
             'updated_at'         => now(),
         ]);
 
         UserExternalLessonProgress::updateOrCreate(
-            ['user_id' => $student->id, 'lesson_id' => $lessonId],
+            ['user_id' => $studentUser->id, 'lesson_id' => $lessonId],
             ['status' => $passed ? 'completed' : 'in_progress', 'quiz_score' => $score, 'completed_at' => $passed ? now() : null]
         );
 
