@@ -16,10 +16,19 @@ class ChildProgressController extends Controller
     public function getProgress(Request $request, $childId)
     {
         $parent   = $request->user();
+
+        if (!$parent) {
+            return response()->json(['message' => 'Not authenticated.'], 401);
+        }
+
         $childIds = $this->getLinkedChildIds($parent);
 
-        if (!in_array($childId, $childIds)) {
-            return response()->json(['message' => 'Unauthorised access to this student.'], 403);
+        // Also allow admin to view any child's progress
+        if (!in_array($childId, $childIds) && $parent->role !== 'admin') {
+            return response()->json([
+                'message' => 'Unauthorised access to this student.',
+                'debug'   => 'Parent ' . $parent->id . ' does not own child ' . $childId . '. Linked children: ' . implode(',', $childIds)
+            ], 403);
         }
 
         $child = User::with('studentProfile')->findOrFail($childId);
