@@ -23,7 +23,6 @@ class ExternalLessonController extends Controller
     {
         if (empty($url) || !str_contains($url, 'thenational.academy')) return $url;
         try {
-            // We omit Accept: application/json to prevent 406 errors on binary streams (like PDFs)
             $res = Http::withoutRedirecting()->withToken($apiKey)->get($url);
             $status = $res->status();
 
@@ -52,12 +51,35 @@ class ExternalLessonController extends Controller
     }
 
     // =========================================================
-    // GET SINGLE LESSON — lazy fetch if not yet populated
+    // GET SINGLE LESSON — lazy fetch & security check
     // =========================================================
 
     public function show(Request $request, $id)
     {
         $lesson = ExternalLesson::with('topic.subject')->findOrFail($id);
+        $studentId = $request->query('student_id') ?: auth()->id();
+
+        // --- SECURITY CHECK: Prevent bypassing locked lessons ---
+        $allLessons = ExternalLesson::whereHas('topic', function($q) use ($lesson) {
+            $q->where('subject_id', optional($lesson->topic)->subject_id);
+        })->orderBy('order_index')->get();
+
+        $previousComplete = true;
+        foreach ($allLessons as $l) {
+            if ($l->id == $lesson->id) break;
+            $prog = UserExternalLessonProgress::where('user_id', $studentId)->where('lesson_id', $l->id)->first();
+            if (!($prog && $prog->status === 'completed')) {
+                $previousComplete = false;
+                break;
+            }
+        }
+
+        if (!$previousComplete) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This lesson is locked until you complete the previous lessons.'
+            ], 403);
+        }
 
         if ($this->needsOakContent($lesson)) {
             $lesson = $this->fetchAndStoreOakContent($lesson);
@@ -80,9 +102,6 @@ class ExternalLessonController extends Controller
             }
             $lesson->worksheet_url = json_encode($metadata);
         }
-
-        // Use student_id if provided (parent impersonating child)
-        $studentId = $request->query('student_id') ?: auth()->id();
 
         $progress = UserExternalLessonProgress::where('user_id', $studentId)
             ->where('lesson_id', $id)
@@ -122,9 +141,9 @@ class ExternalLessonController extends Controller
             if ($summaryRes->successful()) {
                 $s = $summaryRes->json();
                 $metadata['outcome']        = $s['pupilLessonOutcome'] ?? null;
-                $metadata['key_points']     = array_values(array_filter(array_map(function($p) { return isset($p['keyLearningPoint']) ? $p['keyLearningPoint'] : null; }, $s['keyLearningPoints'] ?? [])));
-                $metadata['keywords']       = array_map(function($kw) { return ['keyword' => isset($kw['keyword']) ? $kw['keyword'] : '', 'description' => isset($kw['description']) ? $kw['description'] : '']; }, $s['lessonKeywords'] ?? []);
-                $metadata['misconceptions'] = array_map(function($m) { return ['misconception' => isset($m['misconception']) ? $m['misconception'] : '', 'response' => isset($m['response']) ? $m['response'] : '']; }, $s['misconceptionsAndCommonMistakes'] ?? []);
+                $metadata['key_points']     = array_values(array_filter(array_map(function($p) { return $p['keyLearningPoint'] ?? null; }, $s['keyLearningPoints'] ?? [])));
+                $metadata['keywords']       = array_map(function($kw) { return ['keyword' => $kw['keyword'] ?? '', 'description' => $kw['description'] ?? '']; }, $s['lessonKeywords'] ?? []);
+                $metadata['misconceptions'] = array_map(function($m) { return ['misconception' => $m['misconception'] ?? '', 'response' => $m['response'] ?? '']; }, $s['misconceptionsAndCommonMistakes'] ?? []);
             }
 
             // ── Transcript ────────────────────────────────────
@@ -141,21 +160,16 @@ class ExternalLessonController extends Controller
                 $updates['description'] = $metadata['outcome'] ?? 'fetched';
             }
 
-          // ── Quiz (Starter & Exit) ─────────────────────────
+            // ── Quiz (Starter & Exit) ─────────────────────────
             $quizRes = Http::withHeaders([
                 'Authorization' => "Bearer {$apiKey}", 'Accept' => 'application/json',
             ])->timeout(20)->get("{$apiUrl}/lessons/{$slug}/quiz");
 
             if ($quizRes->successful()) {
                 $rawQuiz = $quizRes->json();
-                
-                // Normalise both starter and exit quizzes
-                $starterQuestions = $this->normaliseOakQuizData($rawQuiz['starterQuiz'] ?? []);
-                $exitQuestions    = $this->normaliseOakQuizData($rawQuiz['exitQuiz'] ?? []);
-
                 $updates['quiz_data'] = json_encode([
-                    'starter' => $starterQuestions,
-                    'exit'    => $exitQuestions,
+                    'starter' => $this->normaliseOakQuizData($rawQuiz['starterQuiz'] ?? []),
+                    'exit'    => $this->normaliseOakQuizData($rawQuiz['exitQuiz'] ?? []),
                 ]);
             }
 
@@ -171,7 +185,6 @@ class ExternalLessonController extends Controller
 
             if ($assetsRes->successful()) {
                 $assetsData = $assetsRes->json();
-                
                 if (isset($assetsData['assets']) && is_array($assetsData['assets'])) {
                     foreach ($assetsData['assets'] as $asset) {
                         $type = $asset['type'] ?? '';
@@ -201,7 +214,7 @@ class ExternalLessonController extends Controller
         return ExternalLesson::with('topic.subject')->find($lesson->id);
     }
 
- private function normaliseOakQuizData(array $source): array
+    private function normaliseOakQuizData(array $source): array
     {
         $questions = [];
 
@@ -265,15 +278,7 @@ class ExternalLessonController extends Controller
             return response()->json(['success' => false, 'message' => 'No quiz available.'], 422);
         }
 
-        // --- FIXED: Extract exit quiz from the new structured format ---
-        $questions = [];
-        if (isset($quizData['exit'])) {
-            $questions = $quizData['exit'];
-        } elseif (isset($quizData[0]['question'])) {
-            $questions = $quizData; // legacy flat array format
-        } else {
-            $questions = $quizData['questions'] ?? [];
-        }
+        $questions = $quizData['exit'] ?? ($quizData[0]['question'] ? $quizData : ($quizData['questions'] ?? []));
 
         if (empty($questions)) {
             return response()->json(['success' => false, 'message' => 'No exit quiz questions available.'], 422);
