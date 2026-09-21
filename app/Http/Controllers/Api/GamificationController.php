@@ -51,20 +51,6 @@ class GamificationController extends Controller
         return response()->json($rewards);
     }
 
-
-    public function updateRank($studentId) {
-    $profile = StudentProfile::where('user_id', $studentId)->first();
-    $points = $profile->total_points;
-    
-    if ($points >= 5000) $rank = 'Master';
-    elseif ($points >= 3001) $rank = 'Expert';
-    elseif ($points >= 1501) $rank = 'Scholar';
-    elseif ($points >= 501) $rank = 'Explorer';
-    else $rank = 'Beginner';
-    
-    $profile->update(['current_level' => $rank]);
-}
-
     /**
      * 🎒 MY TREASURES: Get student's purchase history
      */
@@ -102,11 +88,11 @@ class GamificationController extends Controller
             }
 
             // 🚨 Check balance BEFORE attempting anything
-            if ($profile->total_coins < $reward->cost_coins) {
+            if (($profile->total_points ?? $profile->total_coins ?? 0) < $reward->cost_coins) {
                 return response()->json([
                     'message' => 'Insufficient XP! Keep learning to earn more.',
                     'required' => $reward->cost_coins,
-                    'current' => $profile->total_coins
+                    'current' => ($profile->total_points ?? $profile->total_coins ?? 0)
                 ], 400);
             }
 
@@ -126,11 +112,13 @@ class GamificationController extends Controller
             ]);
 
             // Get updated balance for the response
-            $newBalance = $profile->fresh()->total_coins;
+            $freshProfile = $profile->fresh();
+            $newBalance = $freshProfile->total_points ?? $freshProfile->total_coins ?? 0;
 
             return response()->json([
                 'message' => 'Request sent! Admin will fulfill your reward soon.',
                 'remaining_coins' => $newBalance,
+                'remaining_points' => $newBalance,
                 'redemption' => $redemption
             ], 200);
         });
