@@ -5,48 +5,46 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\ExternalSubject;
 use App\Models\User;
-use App\Models\UserExternalLessonProgress;
 use Illuminate\Http\Request;
 
 class ExternalSubjectController extends Controller
 {
-  public function index(Request $request)
+    /**
+     * Get all subjects user is enrolled in
+     * Supports student_id parameter for parents viewing their children's subjects
+     */
+    public function index(Request $request)
     {
         try {
+            // If student_id is provided (parent viewing), use that
+            // Otherwise use authenticated user
             $userId = $request->input('student_id') ?: auth()->id();
+            
+            // Get the user (either the authenticated user or the specified student)
             $user = User::findOrFail($userId);
             
-            // Get subjects through the user relation
-            $subjects = $user->externalSubjects()->with(['topics.lessons.userProgress' => function($query) use ($userId) {
-                $query->where('user_id', $userId);
-            }])->get();
+            $subjects = $user->externalSubjects()
+                            ->with(['topics.lessons' => function($query) use ($userId) {
+                                // For the index/list view: only load title+id, not full description
+                                // (description is 10,000 chars per lesson — loading all would be very slow)
+                                $query->where(function($q) {
+                                        $q->whereNotNull('description')
+                                          ->where('description', '!=', 'fetched')
+                                          ->whereRaw('CHAR_LENGTH(description) > 50');
+                                    })
+                                    ->select('id', 'topic_id', 'title', 'duration_minutes', 'order_index', 'quiz_data')
+                                    ->with(['userProgress' => function($q) use ($userId) {
+                                        $q->where('user_id', $userId)->select('user_id', 'lesson_id', 'status', 'quiz_score');
+                                    }]);
+                            }])
+                            ->get();
 
-            // Calculate progress percentage safely in-memory without extra query overhead
-            foreach ($subjects as $subj) {
-                $total = 0; 
-                $done = 0;
-
-                foreach ($subj->topics as $top) {
-                    foreach ($top->lessons as $les) {
-                        $total++;
-                        // Check if preloaded userProgress has a completed status
-                        $progressRecord = $les->userProgress->first();
-                        if ($progressRecord && $progressRecord->status === 'completed') {
-                            $done++;
-                        }
-                    }
-                }
-                
-                // Assign progress directly to pivot or a custom attribute for the frontend
-                if (!isset($subj->pivot)) {
-                    $subj->pivot = new \stdClass();
-                }
-                $subj->pivot->progress_percentage = $total > 0 ? round(($done / $total) * 100) : 0;
-            }
-
-            return response()->json(['success' => true, 'subjects' => $subjects]);
+            return response()->json([
+                'success' => true,
+                'subjects' => $subjects
+            ]);
+            
         } catch (\Exception $e) {
-            \Log::error("External subjects index error: " . $e->getMessage());
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch external subjects',
@@ -55,43 +53,51 @@ class ExternalSubjectController extends Controller
         }
     }
 
+    /**
+     * Get single subject with topics and lessons
+     * Supports student_id parameter for parents viewing their children's subjects
+     */
     public function show(Request $request, $id)
     {
         try {
+            // If student_id is provided (parent viewing), use that
+            // Otherwise use authenticated user
             $userId = $request->input('student_id') ?: auth()->id();
             
-            $subject = ExternalSubject::with(['topics' => function($query) {
-                $query->orderBy('order_index');
-            }, 'topics.lessons' => function($query) {
-                $query->orderBy('order_index');
+            $subject = ExternalSubject::with(['topics' => function($query) use ($userId) {
+                $query->with(['lessons' => function($q) use ($userId) {
+                    // Only hide lessons with truly blank content
+                    $q->where(function($inner) {
+                            $inner->whereNotNull('description')
+                                  ->where('description', '!=', 'fetched')
+                                  ->whereRaw('CHAR_LENGTH(description) > 50');
+                        })
+                        ->with(['userProgress' => function($p) use ($userId) {
+                            $p->where('user_id', $userId);
+                        }]);
+                }])->orderBy('order_index');
             }])->findOrFail($id);
 
-            $allLessonsCount = 0;
-            $completedLessonsCount = 0;
-            $previousLessonCompleted = true;
-
+            // ── Compute is_locked for each lesson ──────────────────
+            // A lesson is locked only if the PREVIOUS lesson in the same
+            // topic has never been started (no progress record at all).
+            // Students can read any lesson they've unlocked, but must pass
+            // the quiz (score ≥ 70%) before the NEXT lesson unlocks.
             foreach ($subject->topics as $topic) {
-                foreach ($topic->lessons as $lesson) {
-                    $allLessonsCount++;
-
-                    $progress = UserExternalLessonProgress::where('user_id', $userId)
-                        ->where('lesson_id', $lesson->id)
-                        ->first();
-
-                    $isCompleted = $progress && $progress->status === 'completed';
-
-                    if ($isCompleted) {
-                        $completedLessonsCount++;
+                $prevCompleted = true; // first lesson is always unlocked
+                foreach ($topic->lessons as $i => $lesson) {
+                    if ($i === 0) {
+                        $lesson->is_locked = false;
+                    } else {
+                        $prevLesson    = $topic->lessons[$i - 1];
+                        $prevProgress  = $prevLesson->userProgress->first();
+                        // Locked if previous lesson has never been opened
+                        $lesson->is_locked = !$prevProgress;
+                        // Locked for quiz (next level) if prev quiz score < 70
+                        $lesson->prev_quiz_passed = $prevProgress && $prevProgress->quiz_score >= 70;
                     }
-
-                    $lesson->is_locked = !$previousLessonCompleted;
-                    $previousLessonCompleted = $isCompleted;
                 }
             }
-
-            $subject->progress_percentage = $allLessonsCount > 0 
-                ? round(($completedLessonsCount / $allLessonsCount) * 100) 
-                : 0;
 
             return response()->json([
                 'success' => true,

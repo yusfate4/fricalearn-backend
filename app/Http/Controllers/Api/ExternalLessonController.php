@@ -60,32 +60,38 @@ class ExternalLessonController extends Controller
         $lesson = ExternalLesson::with('topic.subject')->findOrFail($id);
         $studentId = $request->query('student_id') ?: auth()->id();
 
-        // --- ROBUST SECURITY CHECK: Prevent bypassing locked lessons ---
-        $allLessons = ExternalLesson::join('external_topics', 'external_lessons.topic_id', '=', 'external_topics.id')
-            ->where('external_topics.subject_id', optional(optional($lesson->topic))->subject_id)
-            ->orderBy('external_topics.order_index', 'asc')
-            ->orderBy('external_lessons.order_index', 'asc')
-            ->select('external_lessons.id')
+        // --- LESSON ACCESS CHECK ---
+        // Rule: Lesson content is always readable.
+        // Only enforce sequential access at the quiz level (see submitQuiz).
+        // We still check: if the previous lesson hasn't been started at all,
+        // block access so students don't skip ahead entirely.
+
+        // Get all lessons in this subject in order (within same topic only for soft lock)
+        $topicLessons = ExternalLesson::where('topic_id', $lesson->topic_id)
+            ->orderBy('order_index', 'asc')
             ->pluck('id')
             ->toArray();
 
         $previousLessonId = null;
-        foreach ($allLessons as $index => $lessonIdInList) {
+        foreach ($topicLessons as $index => $lessonIdInList) {
             if ($lessonIdInList == $lesson->id && $index > 0) {
-                $previousLessonId = $allLessons[$index - 1];
+                $previousLessonId = $topicLessons[$index - 1];
                 break;
             }
         }
 
+        // Only block if previous lesson has NEVER been opened (not even started)
+        // Students CAN read a lesson before passing the quiz — quiz lock is enforced in submitQuiz
         if ($previousLessonId) {
             $prevProgress = UserExternalLessonProgress::where('user_id', $studentId)
                 ->where('lesson_id', $previousLessonId)
                 ->first();
 
-            if (!($prevProgress && $prevProgress->status === 'completed')) {
+            if (!$prevProgress) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'This lesson is locked until you complete the previous lessons.'
+                    'message' => 'Please complete the previous lesson first.',
+                    'locked'  => true,
                 ], 403);
             }
         }
