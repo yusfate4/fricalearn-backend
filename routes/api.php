@@ -2,6 +2,7 @@
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Artisan;
 
 // --- 🎮 Controllers ---
@@ -98,10 +99,11 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // 🚀 GLOBAL CHAT
     Route::prefix('chat')->group(function () {
-        Route::post('/message', [ChatController::class, 'sendMessage']);
-        Route::get('/conversations', [ChatController::class, 'getConversations']);
+        Route::post('/message',              [ChatController::class, 'sendMessage']);
+        Route::get('/conversation',          [ChatController::class, 'getConversation']); // ParentMessages
+        Route::get('/conversations',         [ChatController::class, 'getConversations']);
         Route::get('/messages/{receiverId}', [ChatController::class, 'getMessages']);
- });
+    });
 
 
 Route::get('/students/{id}/info', function($id) {
@@ -167,10 +169,11 @@ Route::get('/students/{id}/info', function($id) {
         Route::post('/ai/generate-quiz', [AIQuizController::class, 'generate']);
 
         Route::prefix('payments')->group(function () {
-            Route::get('/pending', [PaymentController::class, 'getPendingPayments']);
-            Route::get('/history', [PaymentController::class, 'getPaymentHistory']);
+            Route::get('/',          [PaymentController::class, 'getPendingPayments']); // AdminPayments overview
+            Route::get('/pending',   [PaymentController::class, 'getPendingPayments']);
+            Route::get('/history',   [PaymentController::class, 'getPaymentHistory']);
             Route::post('/{id}/approve', [PaymentController::class, 'approvePayment']);
-            Route::post('/{id}/reject', [PaymentController::class, 'rejectPayment']);
+            Route::post('/{id}/reject',  [PaymentController::class, 'rejectPayment']);
         });
 
         Route::prefix('rewards')->group(function () {
@@ -241,10 +244,16 @@ Route::prefix('onboarding')->group(function () {
     Route::post('/ai/chat-olu', [AiController::class, 'chatWithOlu']);
     
     Route::prefix('gamification')->group(function () {
-        Route::get('/leaderboard', [GamificationController::class, 'getLeaderboard']);
-        Route::get('/rewards', [GamificationController::class, 'getRewardsCatalog']);
-        Route::post('/rewards/{id}/redeem', [GamificationController::class, 'redeemReward']);
+        Route::get('/leaderboard',           [GamificationController::class, 'getLeaderboard']);
+        Route::get('/rewards',               [GamificationController::class, 'getRewardsCatalog']);
+        Route::post('/rewards/{id}/redeem',  [GamificationController::class, 'redeemReward']);
+        Route::get('/my-rewards',            [GamificationController::class, 'getMyRewards']);
+        Route::get('/my-collection',         [GamificationController::class, 'getMyRewards']);
     });
+
+    // Standalone aliases used by Dashboard + store pages
+    Route::get('/my-rewards',   [GamificationController::class, 'getMyRewards']);
+    Route::get('/my-treasures', [GamificationController::class, 'getMyRewards']);
 
 
  
