@@ -52,3 +52,16 @@ Schedule::command('reminders:inactive-students')->dailyAt('10:00');
 // 💜 TRIAL FEEDBACK CHECK-INS → parents on trial (Tuesdays 10 AM + Fridays 5 PM)
 Schedule::command('reports:trial-feedback')->weeklyOn(2, '10:00');
 Schedule::command('reports:trial-feedback')->weeklyOn(5, '17:00');
+
+
+Schedule::call(function () {
+    $unread = DB::table('messages')
+        ->where('is_read', false)
+        ->where('created_at', '>=', now()->subMinutes(30))
+        ->count();
+    
+    if ($unread > 0) {
+        // Send WhatsApp via Twilio or just log for now
+        Log::info("UNREAD CHAT ALERT: {$unread} new messages in last 30 mins");
+    }
+})->everyThirtyMinutes();
