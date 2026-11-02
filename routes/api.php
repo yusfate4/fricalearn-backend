@@ -30,6 +30,35 @@ use App\Http\Controllers\Api\ChildProgressController;
 use App\Http\Controllers\Api\OakCurriculumController;
 
 
+// 🔍 RECEIPT UPLOAD DIAGNOSTIC — POST a test file to this route
+// curl -X POST https://api.fricalearn.com/api/upload-test-7788 -F "file=@/path/to/image.png"
+Route::post('/upload-test-7788', function (\Illuminate\Http\Request $request) {
+    $info = [
+        'php_upload_max'     => ini_get('upload_max_filesize'),
+        'php_post_max'       => ini_get('post_max_size'),
+        'php_tmp_dir'        => ini_get('upload_tmp_dir') ?: sys_get_temp_dir(),
+        'tmp_dir_writable'   => is_writable(ini_get('upload_tmp_dir') ?: sys_get_temp_dir()),
+        'storage_writable'   => is_writable(storage_path('app/public/receipts')),
+        'has_file'           => $request->hasFile('file'),
+    ];
+    if ($request->hasFile('file')) {
+        $file = $request->file('file');
+        $info['file_valid']   = $file->isValid();
+        $info['file_error']   = $file->getError();
+        $info['file_size']    = $file->getSize();
+        $info['file_mime']    = $file->getMimeType();
+        try {
+            $path = $file->storeAs('receipts', 'test_upload_' . time() . '.' . $file->getClientOriginalExtension(), 'public');
+            $info['stored_path']   = $path;
+            $info['file_exists']   = \Illuminate\Support\Facades\Storage::disk('public')->exists($path);
+            $info['public_url']    = asset('storage/' . $path);
+        } catch (\Exception $e) {
+            $info['store_error'] = $e->getMessage();
+        }
+    }
+    return response()->json($info);
+});
+
 // 🚀 THE YUSUF MIGRATION TOOL
 Route::get('/force-migrate-7788', function () {
     Artisan::call('config:clear');
