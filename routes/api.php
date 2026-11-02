@@ -293,9 +293,10 @@ Route::prefix('external')->middleware('auth:sanctum')->group(function () {
 });
 });
 // ─────────────────────────────────────────────────────────────
-// 🆓 FREEMIUM TRIAL — status check + premium upgrade (receipt)
+// 🆓 FREEMIUM TRIAL — status check, tiers, premium upgrade (receipt)
 // ─────────────────────────────────────────────────────────────
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/trial/status', [\App\Http\Controllers\Api\TrialController::class, 'status']);
+    Route::get('/trial/tiers', [\App\Http\Controllers\Api\TrialController::class, 'tiers']); // FIX: was 404 — route was missing
     Route::post('/trial/upgrade', [\App\Http\Controllers\Api\TrialController::class, 'upgrade']);
 });

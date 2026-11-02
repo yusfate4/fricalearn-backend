@@ -202,12 +202,16 @@ public function approvePayment(Request $request, $id)
 
     /**
      * 📊 Fetch Pending Payments
+     *
+     * FIX: also includes 'temporary_approved' (trial upgrades via TrialController::upgrade).
+     * These payments already granted the student access automatically, but still need admin
+     * to verify the bank transfer. They show as "Needs Verification" in the admin UI.
      */
     public function getPendingPayments()
     {
         return response()->json(
             EnrollmentPayment::with(['parent:id,name,email', 'course:id,title'])
-                ->where('status', 'pending')
+                ->whereIn('status', ['pending', 'temporary_approved'])
                 ->whereNotNull('parent_id')
                 ->latest()
                 ->get()
@@ -216,12 +220,16 @@ public function approvePayment(Request $request, $id)
 
     /**
      * 📜 Fetch Payment History
+     *
+     * FIX: also includes 'temporary_approved' so trial upgrade payments appear in history.
+     * Previously, all payments made via TrialController::upgrade() were invisible here
+     * because they store status='temporary_approved', not 'approved' or 'rejected'.
      */
     public function getPaymentHistory()
     {
         return response()->json(
             EnrollmentPayment::with(['parent:id,name', 'course:id,title'])
-                ->whereIn('status', ['approved', 'rejected'])
+                ->whereIn('status', ['approved', 'rejected', 'temporary_approved'])
                 ->latest()
                 ->get()
         );
