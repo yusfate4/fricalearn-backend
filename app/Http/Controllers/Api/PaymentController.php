@@ -115,6 +115,37 @@ public function approvePayment(Request $request, $id)
     if ($payment->status === 'temporary_approved') {
         try {
             $payment->update(['status' => 'approved', 'approved_at' => now()]);
+
+            // Notify parent: payment confirmed
+            $parent = User::find($payment->parent_id);
+            if ($parent && $parent->email) {
+                $sym    = $payment->currency === 'NGN' ? '₦' : '£';
+                $amt    = $sym . number_format((float) $payment->amount, $payment->currency === 'NGN' ? 0 : 2);
+                $html = "
+                <div style='font-family:Arial,sans-serif;max-width:600px;margin:0 auto;'>
+                  <div style='background:#2A1650;padding:24px;border-radius:16px 16px 0 0;'>
+                    <h1 style='color:#fff;margin:0;font-size:20px;'>Frica<span style='color:#FFFF00;'>Learn</span></h1>
+                  </div>
+                  <div style='background:#fff;border:1px solid #eee;border-top:none;padding:28px;border-radius:0 0 16px 16px;'>
+                    <p>Dear " . e($parent->name) . ",</p>
+                    <h2 style='color:#3F2171;font-size:18px;'>✅ Payment Verified — {$payment->child_name}'s subscription is confirmed!</h2>
+                    <p style='line-height:1.6;'>We have verified your bank transfer of <strong>{$amt}</strong> for <strong>" . e($payment->child_name) . "</strong>. Their premium access is fully active and confirmed.</p>
+                    <p style='margin-top:20px;'>
+                      <a href='https://fricalearn.com/login' style='background:#3F2171;color:#fff;padding:12px 24px;border-radius:12px;text-decoration:none;font-weight:bold;'>Open Parent Portal</a>
+                    </p>
+                    <p style='color:#999;font-size:12px;margin-top:24px;'>FRICA SOLUTION LIMITED · hello@fricalearn.com</p>
+                  </div>
+                </div>";
+                try {
+                    Mail::html($html, function ($m) use ($parent, $payment) {
+                        $m->to($parent->email)
+                          ->subject("✅ Payment confirmed — {$payment->child_name}'s FricaLearn subscription is active");
+                    });
+                } catch (\Exception $mailEx) {
+                    Log::warning("Approval email failed: " . $mailEx->getMessage());
+                }
+            }
+
             return response()->json(['message' => 'Trial upgrade payment verified and approved.']);
         } catch (\Exception $e) {
             Log::error("Trial approval error: " . $e->getMessage());
@@ -204,12 +235,76 @@ public function approvePayment(Request $request, $id)
 
     /**
      * ❌ Admin: Reject Payment
+     *
+     * For trial upgrade payments (temporary_approved): revokes premium immediately
+     * and emails the parent explaining their transfer could not be verified.
+     * For regular pending payments: marks rejected and emails parent.
      */
     public function rejectPayment($id)
     {
         $payment = EnrollmentPayment::findOrFail($id);
         $payment->update(['status' => 'rejected']);
-        return response()->json(['message' => 'Payment rejected.']);
+
+        $parent = User::find($payment->parent_id);
+
+        // If this was a trial upgrade — revoke premium access
+        if ($payment->auto_approved) {
+            // Find the student by child_name under this parent
+            $student = null;
+            if ($parent) {
+                $student = DB::table('parent_child')
+                    ->where('parent_id', $parent->id)
+                    ->join('users', 'users.id', '=', 'parent_child.child_id')
+                    ->where('users.name', $payment->child_name)
+                    ->select('users.id', 'users.trial_ends_at')
+                    ->first();
+            }
+            if ($student) {
+                // Restore to trial state (remove premium, keep trial_ends_at if it exists)
+                User::where('id', $student->id)->update([
+                    'is_premium'         => 0,
+                    'premium_expires_at' => null,
+                ]);
+            }
+        }
+
+        // Email parent
+        if ($parent && $parent->email) {
+            $sym  = $payment->currency === 'NGN' ? '₦' : '£';
+            $amt  = $sym . number_format((float) $payment->amount, $payment->currency === 'NGN' ? 0 : 2);
+            $html = "
+            <div style='font-family:Arial,sans-serif;max-width:600px;margin:0 auto;'>
+              <div style='background:#2A1650;padding:24px;border-radius:16px 16px 0 0;'>
+                <h1 style='color:#fff;margin:0;font-size:20px;'>Frica<span style='color:#FFFF00;'>Learn</span></h1>
+              </div>
+              <div style='background:#fff;border:1px solid #eee;border-top:none;padding:28px;border-radius:0 0 16px 16px;'>
+                <p>Dear " . e($parent->name) . ",</p>
+                <h2 style='color:#c0392b;font-size:18px;'>⚠️ Payment not verified — action needed</h2>
+                <p style='line-height:1.6;'>We were unable to verify your bank transfer of <strong>{$amt}</strong> for <strong>" . e($payment->child_name) . "</strong>.</p>
+                <p style='line-height:1.6;'>This could mean:</p>
+                <ul style='color:#555;line-height:1.8;'>
+                  <li>The transfer amount did not match</li>
+                  <li>The child's name was not used as the payment reference</li>
+                  <li>The receipt image was unclear or incomplete</li>
+                </ul>
+                <p style='line-height:1.6;'>Please contact us on WhatsApp at <strong>+234 817 448 5504</strong> or reply to this email and we will resolve it promptly.</p>
+                <p style='margin-top:20px;'>
+                  <a href='https://fricalearn.com/login' style='background:#3F2171;color:#fff;padding:12px 24px;border-radius:12px;text-decoration:none;font-weight:bold;'>Open Parent Portal</a>
+                </p>
+                <p style='color:#999;font-size:12px;margin-top:24px;'>FRICA SOLUTION LIMITED · hello@fricalearn.com</p>
+              </div>
+            </div>";
+            try {
+                Mail::html($html, function ($m) use ($parent, $payment) {
+                    $m->to($parent->email)
+                      ->subject("⚠️ Payment not verified — {$payment->child_name}'s FricaLearn subscription");
+                });
+            } catch (\Exception $e) {
+                Log::warning("Rejection email failed: " . $e->getMessage());
+            }
+        }
+
+        return response()->json(['message' => 'Payment rejected and parent notified.']);
     }
 
     /**
