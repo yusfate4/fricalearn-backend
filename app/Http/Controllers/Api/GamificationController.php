@@ -21,6 +21,7 @@ class GamificationController extends Controller
 
     /**
      * 🏆 LEADERBOARD: Fetch Top Students
+     * Privacy: only first name is exposed — never full name.
      */
     public function getLeaderboard()
     {
@@ -28,6 +29,13 @@ class GamificationController extends Controller
             ->orderBy('total_points', 'desc')
             ->take(10)
             ->get();
+
+        // Strip surname from each entry before sending — privacy policy compliance.
+        $topStudents->each(function ($profile) {
+            if ($profile->user) {
+                $profile->user->name = explode(' ', trim($profile->user->name))[0];
+            }
+        });
 
         return response()->json($topStudents);
     }
