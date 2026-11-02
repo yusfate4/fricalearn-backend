@@ -110,6 +110,18 @@ public function approvePayment(Request $request, $id)
 
     $payment = EnrollmentPayment::findOrFail($id);
 
+    // ── Trial upgrade payments (temporary_approved): student already has premium.
+    // Approval just marks the bank transfer as verified — no enrollment needed.
+    if ($payment->status === 'temporary_approved') {
+        try {
+            $payment->update(['status' => 'approved', 'approved_at' => now()]);
+            return response()->json(['message' => 'Trial upgrade payment verified and approved.']);
+        } catch (\Exception $e) {
+            Log::error("Trial approval error: " . $e->getMessage());
+            return response()->json(['message' => 'Approval failed: ' . $e->getMessage()], 500);
+        }
+    }
+
     try {
         return DB::transaction(function () use ($payment) {
             // 1. Find Student and Parent
@@ -133,7 +145,7 @@ public function approvePayment(Request $request, $id)
 
             // 4. Update Payment
             $payment->update([
-                'status' => 'approved', 
+                'status' => 'approved',
                 'approved_at' => now()
             ]);
 
@@ -160,7 +172,7 @@ public function approvePayment(Request $request, $id)
             // 8. Notify Parent
             try {
                 $parent->notify(new \App\Notifications\StudentAccountActivated([
-                    'name' => $student->name, 
+                    'name' => $student->name,
                     'email' => $student->email
                 ], $course->title ?? 'General Yoruba'));
             } catch (\Exception $e) {
