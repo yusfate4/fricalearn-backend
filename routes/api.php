@@ -33,10 +33,33 @@ use App\Http\Controllers\Api\OakCurriculumController;
 // 🚀 THE YUSUF MIGRATION TOOL
 Route::get('/force-migrate-7788', function () {
     Artisan::call('config:clear');
-    Artisan::call('route:clear'); 
+    Artisan::call('route:clear');
     try {
         Artisan::call('migrate', ['--force' => true]);
         return response()->json(['status' => 'Migration Attempted', 'output' => Artisan::output() ?: 'Success']);
+    } catch (\Exception $e) {
+        return response()->json(['error' => $e->getMessage()]);
+    }
+});
+
+// 🔗 STORAGE LINK TOOL — run once to fix receipt 404s
+// Visit: https://api.fricalearn.com/api/storage-link-7788
+Route::get('/storage-link-7788', function () {
+    try {
+        // If symlink already exists, report it
+        $linkPath = public_path('storage');
+        if (is_link($linkPath)) {
+            return response()->json([
+                'status'  => 'Already linked',
+                'link'    => $linkPath,
+                'target'  => readlink($linkPath),
+            ]);
+        }
+        Artisan::call('storage:link', ['--force' => true]);
+        return response()->json([
+            'status' => 'Storage linked successfully',
+            'output' => Artisan::output() ?: 'Done',
+        ]);
     } catch (\Exception $e) {
         return response()->json(['error' => $e->getMessage()]);
     }
