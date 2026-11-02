@@ -42,24 +42,40 @@ Route::get('/force-migrate-7788', function () {
     }
 });
 
-// 🔗 STORAGE LINK TOOL — run once to fix receipt 404s
+// 🔗 STORAGE LINK + RECEIPTS FOLDER TOOL — run once to fix receipt 404s
 // Visit: https://api.fricalearn.com/api/storage-link-7788
 Route::get('/storage-link-7788', function () {
     try {
-        // If symlink already exists, report it
+        $results = [];
+
+        // 1. Ensure storage symlink exists
         $linkPath = public_path('storage');
         if (is_link($linkPath)) {
-            return response()->json([
-                'status'  => 'Already linked',
-                'link'    => $linkPath,
-                'target'  => readlink($linkPath),
-            ]);
+            $results['symlink'] = 'Already linked → ' . readlink($linkPath);
+        } else {
+            Artisan::call('storage:link', ['--force' => true]);
+            $results['symlink'] = 'Created: ' . (Artisan::output() ?: 'Done');
         }
-        Artisan::call('storage:link', ['--force' => true]);
-        return response()->json([
-            'status' => 'Storage linked successfully',
-            'output' => Artisan::output() ?: 'Done',
-        ]);
+
+        // 2. Ensure receipts directory exists inside storage/app/public
+        $receiptsDir = storage_path('app/public/receipts');
+        if (!is_dir($receiptsDir)) {
+            mkdir($receiptsDir, 0775, true);
+            $results['receipts_dir'] = 'Created: ' . $receiptsDir;
+        } else {
+            $results['receipts_dir'] = 'Already exists: ' . $receiptsDir;
+        }
+
+        // 3. Ensure uploads directory exists (for onboarding receipts)
+        $uploadsDir = storage_path('app/public/uploads');
+        if (!is_dir($uploadsDir)) {
+            mkdir($uploadsDir, 0775, true);
+            $results['uploads_dir'] = 'Created: ' . $uploadsDir;
+        } else {
+            $results['uploads_dir'] = 'Already exists: ' . $uploadsDir;
+        }
+
+        return response()->json(['status' => 'OK', 'details' => $results]);
     } catch (\Exception $e) {
         return response()->json(['error' => $e->getMessage()]);
     }

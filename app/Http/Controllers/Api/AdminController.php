@@ -21,7 +21,7 @@ class AdminController extends Controller
 
         $totalStudents   = User::where('role', 'student')->count();
         $totalParents    = User::where('role', 'parent')->count();
-        $pendingPayments = EnrollmentPayment::where('status', 'pending')->count();
+        $pendingPayments = EnrollmentPayment::whereIn('status', ['pending', 'temporary_approved'])->count();
         $trialsExpiring  = User::where('role', 'student')
             ->where('trial_ends_at', '>=', $now)
             ->where('trial_ends_at', '<=', $now->copy()->addDays(7))
@@ -213,7 +213,7 @@ class AdminController extends Controller
             ->get(['user_id','total_points','current_level']);
 
         // Revenue this month (approved payments)
-        $revenueMonth = EnrollmentPayment::where('status','approved')
+        $revenueMonth = EnrollmentPayment::whereIn('status', ['approved', 'temporary_approved'])
             ->where('created_at', '>=', $now->copy()->startOfMonth())
             ->sum('amount');
 
@@ -237,7 +237,7 @@ class AdminController extends Controller
         $now = now();
 
         $pending = EnrollmentPayment::with(['parent:id,name,email'])
-            ->where('status', 'pending')
+            ->whereIn('status', ['pending', 'temporary_approved'])
             ->latest()
             ->get();
 
