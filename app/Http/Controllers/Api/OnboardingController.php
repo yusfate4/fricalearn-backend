@@ -158,15 +158,15 @@ class OnboardingController extends Controller
             'bank_accounts' => [
                 'ngn' => [
                     'currency' => 'NGN',
-                    'bank_name' => 'PROVIDUS BANK',
-                    'account_number' => '1309393680',
+                    'bank_name' => 'TAJ Bank Ltd',
+                    'account_number' => '0016979388',
                     'account_name' => 'FRICA SOLUTION LIMITED',
                     'flag' => '🇳🇬',
                 ],
                 'gbp' => [
-                    'currency' => 'GBP',
-                    'bank_name' => 'Monzo/Revolut',
-                    'account_number' => '012345678',
+                    'currency' => 'USD',
+                    'bank_name' => 'TAJ Bank Ltd',
+                    'account_number' => '0016979395',
                     'account_name' => 'FRICA SOLUTION LIMITED',
                     'flag' => '🇬🇧',
                 ],
